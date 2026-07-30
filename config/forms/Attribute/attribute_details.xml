@@ -97,6 +97,20 @@
             </meta>
         </property>
 
+        <property name="config/placeholder" type="text_line" colspan="6"
+                  visibleCondition='type == "text" || type == "number"'>
+            <meta>
+                <title>sulu_product.placeholder</title>
+            </meta>
+        </property>
+
+        <property name="config/defaultValue" type="text_line" colspan="6"
+                  visibleCondition='type == "text" || type == "number"'>
+            <meta>
+                <title>sulu_product.default_value</title>
+            </meta>
+        </property>
+
         <property name="description" type="text_editor">
             <meta>
                 <title>sulu_admin.description</title>

@@ -310,6 +310,46 @@ class AttributeControllerTest extends SuluTestCase
         $this->assertArrayNotHasKey('measurementFamily', $config);
     }
 
+    public function testPersistsPlaceholderAndDefaultValueInConfig(): void
+    {
+        self::purgeDatabase();
+        $groupId = $this->createGroup();
+
+        $this->client->request(
+            'POST',
+            '/admin/api/attributes.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'key' => 'insulation-resistance',
+                'name' => 'Insulation resistance',
+                'type' => 'text',
+                'group' => $groupId,
+                'config' => ['placeholder' => '> 2 GΩ', 'defaultValue' => '> 2 GΩ'],
+            ]) ?: null,
+        );
+        $postResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(201, $postResponse);
+        $postData = \json_decode((string) $postResponse->getContent(), true);
+        $this->assertIsArray($postData);
+        $id = $postData['id'];
+        $this->assertIsString($id);
+
+        $this->client->request('GET', '/admin/api/attributes/' . $id . '.json?locale=en');
+        $response = $this->client->getResponse();
+        $this->assertHttpStatusCode(200, $response);
+
+        $data = \json_decode((string) $response->getContent(), true);
+        $this->assertIsArray($data);
+
+        $config = $data['config'];
+        $this->assertIsArray($config);
+        $this->assertSame('> 2 GΩ', $config['placeholder']);
+        $this->assertSame('> 2 GΩ', $config['defaultValue']);
+    }
+
     public function testMeasurementFamilyIsNullWhenNoUnitStored(): void
     {
         self::purgeDatabase();
