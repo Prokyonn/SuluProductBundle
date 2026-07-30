@@ -33,6 +33,8 @@ final class NumberAttributeType extends AbstractAttributeType
 
     public function configureField(FieldMetadata $field, AttributeInterface $attribute, string $locale): void
     {
+        parent::configureField($field, $attribute, $locale);
+
         $config = $attribute->getConfig();
 
         foreach (['min', 'max', 'step'] as $name) {

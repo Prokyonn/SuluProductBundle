@@ -73,6 +73,7 @@ class OptionsAttributeTypeTest extends TestCase
 
         $attribute = $this->prophesize(AttributeInterface::class);
         $attribute->getOptions()->willReturn([$option->reveal()]);
+        $attribute->getConfig()->willReturn([]);
 
         $field = new FieldMetadata('attributes/1');
         $field->setType('single_select');
@@ -82,6 +83,23 @@ class OptionsAttributeTypeTest extends TestCase
         $valueOptions = $field->getOptions()['values']->getValue();
         self::assertIsArray($valueOptions);
         self::assertSame('red', $valueOptions[0]->getTitle('en'));
+    }
+
+    public function testConfigureFieldAddsPlaceholderAlongsideOptions(): void
+    {
+        $attribute = $this->prophesize(AttributeInterface::class);
+        $attribute->getOptions()->willReturn([]);
+        $attribute->getConfig()->willReturn(['placeholder' => '> 2 GΩ']);
+
+        $field = new FieldMetadata('attributes/1');
+        $field->setType('single_select');
+
+        (new OptionsAttributeType())->configureField($field, $attribute->reveal(), 'en');
+
+        $options = $field->getOptions();
+        self::assertArrayHasKey('placeholder', $options);
+        self::assertSame('> 2 GΩ', $options['placeholder']->getValue());
+        self::assertArrayHasKey('values', $options);
     }
 
     public function testConfigureFieldAddsOptionsAsCollection(): void
@@ -94,6 +112,7 @@ class OptionsAttributeTypeTest extends TestCase
 
         $attribute = $this->prophesize(AttributeInterface::class);
         $attribute->getOptions()->willReturn([$option->reveal()]);
+        $attribute->getConfig()->willReturn([]);
 
         $field = new FieldMetadata('attributes/1');
         $field->setType('single_select');

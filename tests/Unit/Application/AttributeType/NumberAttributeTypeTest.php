@@ -109,4 +109,21 @@ class NumberAttributeTypeTest extends TestCase
         self::assertArrayNotHasKey('max', $options);
         self::assertArrayNotHasKey('step', $options);
     }
+
+    public function testConfigureFieldAddsPlaceholderAlongsideMinMaxStep(): void
+    {
+        $type = new NumberAttributeType();
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setConfig(['placeholder' => '> 2 GΩ', 'min' => 0, 'max' => 100, 'step' => 0.5]);
+
+        $field = new FieldMetadata('attributes/1');
+        $type->configureField($field, $attribute, 'en');
+
+        $options = $field->getOptions();
+        self::assertArrayHasKey('placeholder', $options);
+        self::assertSame('> 2 GΩ', $options['placeholder']->getValue());
+        self::assertSame('0', $options['min']->getValue());
+        self::assertSame('100', $options['max']->getValue());
+        self::assertSame('0.5', $options['step']->getValue());
+    }
 }

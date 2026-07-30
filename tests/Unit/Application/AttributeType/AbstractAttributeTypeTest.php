@@ -51,7 +51,7 @@ class AbstractAttributeTypeTest extends TestCase
         self::assertSame(['a' => 1], $this->type()->readValue($value));
     }
 
-    public function testConfigureFieldIsNoOp(): void
+    public function testConfigureFieldWithoutConfigAddsNoOptions(): void
     {
         $field = new FieldMetadata('attributes/1');
         $field->setType('text_line');
@@ -60,5 +60,40 @@ class AbstractAttributeTypeTest extends TestCase
 
         self::assertSame('text_line', $field->getType());
         self::assertSame([], $field->getOptions());
+    }
+
+    public function testConfigureFieldAddsPlaceholderFromConfig(): void
+    {
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setConfig(['placeholder' => '> 2 GΩ']);
+
+        $field = new FieldMetadata('attributes/1');
+        $this->type()->configureField($field, $attribute, 'en');
+
+        $options = $field->getOptions();
+        self::assertArrayHasKey('placeholder', $options);
+        self::assertSame('> 2 GΩ', $options['placeholder']->getValue());
+    }
+
+    public function testConfigureFieldSkipsEmptyPlaceholder(): void
+    {
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setConfig(['placeholder' => '']);
+
+        $field = new FieldMetadata('attributes/1');
+        $this->type()->configureField($field, $attribute, 'en');
+
+        self::assertArrayNotHasKey('placeholder', $field->getOptions());
+    }
+
+    public function testConfigureFieldSkipsNonStringPlaceholder(): void
+    {
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setConfig(['placeholder' => 42]);
+
+        $field = new FieldMetadata('attributes/1');
+        $this->type()->configureField($field, $attribute, 'en');
+
+        self::assertArrayNotHasKey('placeholder', $field->getOptions());
     }
 }

@@ -15,6 +15,7 @@ namespace Sulu\Product\Tests\Unit\Application\AttributeType;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\FieldMetadata;
 use Sulu\Product\Application\AttributeType\TextAttributeType;
 use Sulu\Product\Domain\Model\Attribute;
 use Sulu\Product\Domain\Model\AttributeGroup;
@@ -42,6 +43,31 @@ class TextAttributeTypeTest extends TestCase
 
         self::assertSame('hello', $value->getText());
         self::assertSame('hello', $type->readValue($value));
+    }
+
+    public function testConfigureFieldAddsPlaceholderFromConfig(): void
+    {
+        $type = new TextAttributeType();
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setConfig(['placeholder' => '> 2 GΩ']);
+
+        $field = new FieldMetadata('attributes/1');
+        $type->configureField($field, $attribute, 'en');
+
+        $options = $field->getOptions();
+        self::assertArrayHasKey('placeholder', $options);
+        self::assertSame('> 2 GΩ', $options['placeholder']->getValue());
+    }
+
+    public function testConfigureFieldSkipsMissingPlaceholder(): void
+    {
+        $type = new TextAttributeType();
+        $attribute = new Attribute(new AttributeGroup());
+
+        $field = new FieldMetadata('attributes/1');
+        $type->configureField($field, $attribute, 'en');
+
+        self::assertArrayNotHasKey('placeholder', $field->getOptions());
     }
 
     public function testWriteNullClearsText(): void

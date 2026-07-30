@@ -33,6 +33,8 @@ final class OptionsAttributeType extends AbstractAttributeType
 
     public function configureField(FieldMetadata $field, AttributeInterface $attribute, string $locale): void
     {
+        parent::configureField($field, $attribute, $locale);
+
         $values = new OptionMetadata();
         $values->setName('values');
         $values->setType(OptionMetadata::TYPE_COLLECTION);
