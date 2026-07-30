@@ -38,6 +38,7 @@ use Sulu\Product\Domain\Exception\RequiredProductAttributeMissingException;
 use Sulu\Product\Domain\Model\ProductInterface;
 use Sulu\Product\Domain\Repository\ProductRepositoryInterface;
 use Sulu\Product\Infrastructure\Sulu\Admin\ProductAdmin;
+use Sulu\Product\Infrastructure\Sulu\Content\ProductAttributeDefaultValueEnhancer;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -66,6 +67,7 @@ final class ProductController implements SecuredControllerInterface
         private FieldDescriptorFactoryInterface $fieldDescriptorFactory,
         private DoctrineListBuilderFactoryInterface $listBuilderFactory,
         private RestHelperInterface $restHelper,
+        private ProductAttributeDefaultValueEnhancer $attributeDefaultValueEnhancer,
     ) {
         $this->messageBus = $messageBus;
     }
@@ -125,7 +127,10 @@ final class ProductController implements SecuredControllerInterface
             return new JsonResponse(['template' => ProductInterface::TEMPLATE_TYPE]);
         }
 
-        $normalizedContent = $this->contentManager->normalize($dimensionContent);
+        $normalizedContent = $this->attributeDefaultValueEnhancer->enhance(
+            $dimensionContent,
+            $this->contentManager->normalize($dimensionContent),
+        );
 
         return new JsonResponse($this->normalizer->normalize(
             $normalizedContent,

@@ -108,6 +108,7 @@ use Sulu\Product\Infrastructure\Sulu\Content\Merger\ProductDetailsMerger;
 use Sulu\Product\Infrastructure\Sulu\Content\Normalizer\ProductAttributesNormalizer;
 use Sulu\Product\Infrastructure\Sulu\Content\Normalizer\ProductDetailsNormalizer;
 use Sulu\Product\Infrastructure\Sulu\Content\PageTreeProductSmartContentProvider;
+use Sulu\Product\Infrastructure\Sulu\Content\ProductAttributeDefaultValueEnhancer;
 use Sulu\Product\Infrastructure\Sulu\Content\ProductLinkProvider;
 use Sulu\Product\Infrastructure\Sulu\Content\ProductSmartContentProvider;
 use Sulu\Product\Infrastructure\Sulu\Content\ProductTeaserProvider;
@@ -451,6 +452,9 @@ final class SuluProductBundle extends AbstractBundle
             ])
             ->tag('sulu_content.normalizer');
 
+        $services->set('sulu_product.product_attribute_default_value_enhancer')
+            ->class(ProductAttributeDefaultValueEnhancer::class);
+
         $services->set('sulu_product.webspace_settings_configuration_resolver')
             ->class(WebspaceSettingsConfigurationResolver::class)
             ->args([
@@ -767,6 +771,7 @@ final class SuluProductBundle extends AbstractBundle
                 new Reference('sulu_core.list_builder.field_descriptor_factory'),
                 new Reference('sulu_core.doctrine_list_builder_factory'),
                 new Reference('sulu_core.doctrine_rest_helper'),
+                new Reference('sulu_product.product_attribute_default_value_enhancer'),
             ])
             ->tag('sulu.context', ['context' => 'admin']);
 

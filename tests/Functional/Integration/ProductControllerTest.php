@@ -16,8 +16,10 @@ namespace Sulu\Product\Tests\Functional\Integration;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Sulu\Bundle\TestBundle\Testing\SuluTestCase;
+use Sulu\Content\Domain\Model\DimensionContentInterface;
 use Sulu\Product\Domain\Model\AttributeInterface;
 use Sulu\Product\Domain\Model\AttributeTranslation;
+use Sulu\Product\Domain\Model\ProductAttributeValue;
 use Sulu\Product\Domain\Model\ProductDimensionContent;
 use Sulu\Product\Domain\Repository\AttributeGroupRepositoryInterface;
 use Sulu\Product\Domain\Repository\AttributeRepositoryInterface;
@@ -415,6 +417,161 @@ class ProductControllerTest extends SuluTestCase
         $this->assertIsArray($data['attributes']);
 
         return $data['attributes'][$attributeId] ?? null;
+    }
+
+    private function createDefaultedTextAttribute(string $defaultValue = '> 2 GΩ'): int
+    {
+        $container = self::getContainer();
+
+        /** @var AttributeGroupRepositoryInterface $groupRepository */
+        $groupRepository = $container->get(AttributeGroupRepositoryInterface::class);
+        /** @var AttributeRepositoryInterface $attributeRepository */
+        $attributeRepository = $container->get(AttributeRepositoryInterface::class);
+        /** @var EntityManagerInterface $em */
+        $em = $container->get('doctrine.orm.entity_manager');
+
+        $group = $groupRepository->create();
+        $groupRepository->save($group);
+
+        $attribute = $attributeRepository->create($group);
+        $attribute->setKey('insulation-resistance');
+        $attribute->setType(AttributeInterface::TYPE_TEXT);
+        $attribute->setConfig(['placeholder' => $defaultValue, 'defaultValue' => $defaultValue]);
+        $attribute->addTranslation(new AttributeTranslation($attribute, 'en', 'Insulation resistance'));
+        $attributeRepository->save($attribute);
+
+        $em->flush();
+
+        return $attribute->getId();
+    }
+
+    private function countStoredAttributeValues(string $stage): int
+    {
+        $container = self::getContainer();
+        /** @var EntityManagerInterface $em */
+        $em = $container->get('doctrine.orm.entity_manager');
+
+        /** @var int $count */
+        $count = $em->createQueryBuilder()
+            ->select('COUNT(v.id)')
+            ->from(ProductAttributeValue::class, 'v')
+            ->join('v.productDimensionContent', 'dc')
+            ->where('dc.stage = :stage')
+            ->setParameter('stage', $stage)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return (int) $count;
+    }
+
+    public function testGetReturnsConfiguredDefaultValueForUnfilledAttribute(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createDefaultedTextAttribute();
+        $familyId = $this->createProductFamily($attributeId, false);
+        $id = $this->createProduct($familyId);
+
+        $this->assertSame('> 2 GΩ', $this->getAttributeValue($id, 'en', $attributeId));
+    }
+
+    public function testGetKeepsStoredValueOverConfiguredDefaultValue(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createDefaultedTextAttribute();
+        $familyId = $this->createProductFamily($attributeId, false);
+        $id = $this->createProduct($familyId);
+
+        $this->putAttributes($id, 'en', [$attributeId => 'measured 5 GΩ']);
+
+        $this->assertSame('measured 5 GΩ', $this->getAttributeValue($id, 'en', $attributeId));
+    }
+
+    /**
+     * POST and PUT return the GET payload verbatim, so they carry defaults too. Pinned deliberately:
+     * every response that feeds the admin product form shows the same initial data.
+     */
+    public function testPostAndPutResponsesAlsoCarryConfiguredDefaultValue(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createDefaultedTextAttribute();
+        $familyId = $this->createProductFamily($attributeId, false);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'title' => 'Defaulted Product',
+                'url' => '/defaulted-product',
+                'productFamily' => $familyId,
+            ]) ?: null,
+        );
+        $this->assertHttpStatusCode(201, $this->client->getResponse());
+        $postData = \json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertIsArray($postData);
+        $this->assertIsArray($postData['attributes']);
+        $this->assertSame('> 2 GΩ', $postData['attributes'][$attributeId]);
+
+        $id = $postData['id'];
+        $this->assertIsString($id);
+
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $id . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode(['locale' => 'en', 'title' => 'Renamed Product']) ?: null,
+        );
+        $this->assertHttpStatusCode(200, $this->client->getResponse());
+        $putData = \json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertIsArray($putData);
+        $this->assertIsArray($putData['attributes']);
+        $this->assertSame('> 2 GΩ', $putData['attributes'][$attributeId]);
+    }
+
+    public function testPublishDoesNotPersistConfiguredDefaultValue(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createDefaultedTextAttribute();
+        $familyId = $this->createProductFamily($attributeId, false);
+        $id = $this->createProduct($familyId);
+
+        // The default is visible in the form ...
+        $this->assertSame('> 2 GΩ', $this->getAttributeValue($id, 'en', $attributeId));
+
+        $this->client->request('POST', '/admin/api/products/' . $id . '.json?locale=en&action=publish');
+        $this->assertHttpStatusCode(200, $this->client->getResponse());
+
+        // ... but was never materialised as a stored value on either stage.
+        $this->assertSame(0, $this->countStoredAttributeValues(DimensionContentInterface::STAGE_DRAFT));
+        $this->assertSame(0, $this->countStoredAttributeValues(DimensionContentInterface::STAGE_LIVE));
+    }
+
+    public function testPublishStillFailsForRequiredAttributeWithConfiguredDefaultValue(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createDefaultedTextAttribute();
+        $familyId = $this->createProductFamily($attributeId);
+        $id = $this->createProduct($familyId);
+
+        // A default must not silently satisfy required-attribute validation.
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $id . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'attributes' => [$attributeId => null],
+            ]) ?: null,
+        );
+
+        $this->assertHttpStatusCode(422, $this->client->getResponse());
     }
 
     public function testDelete(): void
