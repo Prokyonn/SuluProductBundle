@@ -67,8 +67,13 @@ class ProductAttributeFormMetadataVisitor implements FormMetadataVisitorInterfac
         /** @var PropertyMetadata[] $schemaProperties */
         $schemaProperties = [];
 
-        $section = new SectionMetadata('attributes');
-        $section->setLabel($this->translator->trans('sulu_product.attributes', [], 'admin', $locale), $locale);
+        $familyTranslation = $family->getTranslation($locale)
+            ?? (($defaultLocale = $family->getDefaultLocale()) !== null ? $family->getTranslation($defaultLocale) : null);
+        $familyName = $familyTranslation?->getName()
+            ?: $this->translator->trans('sulu_product.attributes', [], 'admin', $locale);
+
+        $section = new SectionMetadata('product_family_' . $family->getId());
+        $section->setLabel($familyName, $locale);
 
         foreach ($family->getFamilyAttributes() as $familyAttribute) {
             $attribute = $familyAttribute->getAttribute();

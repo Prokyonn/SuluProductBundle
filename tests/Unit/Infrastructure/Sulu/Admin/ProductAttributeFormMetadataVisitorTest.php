@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Sulu\Product\Tests\Unit\Infrastructure\Sulu\Admin;
 
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Prophecy\PhpUnit\ProphecyTrait;
 use Prophecy\Prophecy\ObjectProphecy;
@@ -31,6 +32,7 @@ use Sulu\Product\Domain\Model\AttributeInterface;
 use Sulu\Product\Domain\Model\AttributeTranslationInterface;
 use Sulu\Product\Domain\Model\ProductFamilyAttributeInterface;
 use Sulu\Product\Domain\Model\ProductFamilyInterface;
+use Sulu\Product\Domain\Model\ProductFamilyTranslationInterface;
 use Sulu\Product\Domain\Repository\ProductFamilyRepositoryInterface;
 use Sulu\Product\Infrastructure\Sulu\Admin\ProductAttributeFormMetadataVisitor;
 use Symfony\Component\DependencyInjection\Container;
@@ -59,7 +61,12 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $mapperContainer->set('number', new NumberPropertyMetadataMapper());
 
         $translator = $this->createStub(TranslatorInterface::class);
-        $translator->method('trans')->willReturn('Unit');
+        $translator->method('trans')->willReturnCallback(
+            static fn (string $id): string => match ($id) {
+                'sulu_product.attributes' => 'Attributes',
+                default => 'Unit',
+            },
+        );
 
         return new ProductAttributeFormMetadataVisitor(
             $this->productFamilyRepository->reveal(),
@@ -69,6 +76,27 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
             new MeasurementRegistry(),
             $translator,
         );
+    }
+
+    /**
+     * @return ObjectProphecy<ProductFamilyInterface>
+     */
+    private function familyProphecy(?string $translatedName = 'XLR Cable Connectors', int $id = 5): ObjectProphecy
+    {
+        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family->getId()->willReturn($id);
+        $family->getDefaultLocale()->willReturn(null);
+
+        $translation = null;
+        if (null !== $translatedName) {
+            $translationProphecy = $this->prophesize(ProductFamilyTranslationInterface::class);
+            $translationProphecy->getName()->willReturn($translatedName);
+            $translation = $translationProphecy->reveal();
+        }
+
+        $family->getTranslation('en')->willReturn($translation);
+
+        return $family;
     }
 
     private function fragmentWithValueField(): FormMetadata
@@ -121,7 +149,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
         $familyAttribute->isRequired()->willReturn(true);
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -134,9 +162,10 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $this->visitor()->visitFormMetadata($form, 'en', ['id' => 'uuid-1']);
 
         $items = $form->getItems();
-        self::assertArrayHasKey('attributes', $items);
-        $section = $items['attributes'];
+        self::assertArrayHasKey('product_family_5', $items);
+        $section = $items['product_family_5'];
         self::assertInstanceOf(SectionMetadata::class, $section);
+        self::assertSame('XLR Cable Connectors', $section->getLabel('en'));
         $sectionItems = $section->getItems();
         self::assertArrayHasKey('attributes/7', $sectionItems);
         $field = $sectionItems['attributes/7'];
@@ -146,6 +175,91 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         self::assertSame('Weight in kilograms', $field->getDescription('en'));
         self::assertTrue($field->isRequired());
         self::assertFalse($form->isCacheable());
+    }
+
+    /**
+     * @return iterable<string, array{0: string|null}>
+     */
+    public static function provideMissingFamilyNames(): iterable
+    {
+        yield 'no translation for locale' => [null];
+        yield 'empty translated name' => [''];
+    }
+
+    #[DataProvider('provideMissingFamilyNames')]
+    public function testUsesGenericSectionLabelWhenFamilyNameMissing(?string $translatedName): void
+    {
+        $translation = $this->prophesize(AttributeTranslationInterface::class);
+        $translation->getName()->willReturn('Weight');
+        $translation->getDescription()->willReturn(null);
+
+        $attribute = $this->prophesize(AttributeInterface::class);
+        $attribute->getId()->willReturn(7);
+        $attribute->getKey()->willReturn('weight');
+        $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
+        $attribute->getConfig()->willReturn([]);
+        $attribute->getTranslation('en')->willReturn($translation->reveal());
+
+        $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
+        $familyAttribute->getAttribute()->willReturn($attribute->reveal());
+        $familyAttribute->isRequired()->willReturn(false);
+
+        $family = $this->familyProphecy($translatedName, 9);
+        $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
+
+        $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
+        $this->formMetadataLoader->getMetadata('product_attribute_number', 'en', [])
+            ->willReturn($this->fragmentWithValueField());
+
+        $form = new FormMetadata();
+        $form->setKey('product_details');
+
+        $this->visitor()->visitFormMetadata($form, 'en', ['id' => 'uuid-1']);
+
+        $section = $form->getItems()['product_family_9'];
+        self::assertInstanceOf(SectionMetadata::class, $section);
+        self::assertSame('Attributes', $section->getLabel('en'));
+    }
+
+    public function testUsesDefaultLocaleFamilyNameWhenLocaleTranslationMissing(): void
+    {
+        $translation = $this->prophesize(AttributeTranslationInterface::class);
+        $translation->getName()->willReturn('Weight');
+        $translation->getDescription()->willReturn(null);
+
+        $attribute = $this->prophesize(AttributeInterface::class);
+        $attribute->getId()->willReturn(7);
+        $attribute->getKey()->willReturn('weight');
+        $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
+        $attribute->getConfig()->willReturn([]);
+        $attribute->getTranslation('en')->willReturn($translation->reveal());
+
+        $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
+        $familyAttribute->getAttribute()->willReturn($attribute->reveal());
+        $familyAttribute->isRequired()->willReturn(false);
+
+        $familyTranslation = $this->prophesize(ProductFamilyTranslationInterface::class);
+        $familyTranslation->getName()->willReturn('XLR Kabelstecker');
+
+        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family->getId()->willReturn(5);
+        $family->getTranslation('en')->willReturn(null);
+        $family->getDefaultLocale()->willReturn('de');
+        $family->getTranslation('de')->willReturn($familyTranslation->reveal());
+        $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
+
+        $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
+        $this->formMetadataLoader->getMetadata('product_attribute_number', 'en', [])
+            ->willReturn($this->fragmentWithValueField());
+
+        $form = new FormMetadata();
+        $form->setKey('product_details');
+
+        $this->visitor()->visitFormMetadata($form, 'en', ['id' => 'uuid-1']);
+
+        $section = $form->getItems()['product_family_5'];
+        self::assertInstanceOf(SectionMetadata::class, $section);
+        self::assertSame('XLR Kabelstecker', $section->getLabel('en'));
     }
 
     public function testInjectsValidationSchemaForAttributes(): void
@@ -165,7 +279,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
         $familyAttribute->isRequired()->willReturn(true);
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -215,7 +329,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
         $familyAttribute->isRequired()->willReturn(false);
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -227,7 +341,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
 
         $this->visitor()->visitFormMetadata($form, 'en', ['id' => 'uuid-1']);
 
-        $section = $form->getItems()['attributes'];
+        $section = $form->getItems()['product_family_5'];
         self::assertInstanceOf(SectionMetadata::class, $section);
         $field = $section->getItems()['attributes/7'];
         self::assertInstanceOf(FieldMetadata::class, $field);
@@ -243,7 +357,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -265,7 +379,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -296,7 +410,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
         $familyAttribute->isRequired()->willReturn(false);
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -320,7 +434,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
 
         $this->visitor()->visitFormMetadata($form, 'en', ['id' => 'uuid-1']);
 
-        $section = $form->getItems()['attributes'];
+        $section = $form->getItems()['product_family_5'];
         self::assertInstanceOf(SectionMetadata::class, $section);
         $injected = $section->getItems()['attributes/7'];
         self::assertInstanceOf(FieldMetadata::class, $injected);
@@ -337,7 +451,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -374,7 +488,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
         $familyAttribute->isRequired()->willReturn(false);
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -386,7 +500,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
 
         $this->visitor()->visitFormMetadata($form, 'en', ['id' => 'uuid-1']);
 
-        $section = $form->getItems()['attributes'];
+        $section = $form->getItems()['product_family_5'];
         self::assertInstanceOf(SectionMetadata::class, $section);
         $sectionItems = $section->getItems();
 
@@ -441,7 +555,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
         $familyAttribute->isRequired()->willReturn(false);
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -453,7 +567,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
 
         $this->visitor()->visitFormMetadata($form, 'en', ['id' => 'uuid-1']);
 
-        $section = $form->getItems()['attributes'];
+        $section = $form->getItems()['product_family_5'];
         self::assertInstanceOf(SectionMetadata::class, $section);
         $sectionItems = $section->getItems();
         self::assertArrayHasKey('attributes/7', $sectionItems);
@@ -492,7 +606,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $familyAttribute->getAttribute()->willReturn($attribute->reveal());
         $familyAttribute->isRequired()->willReturn(false);
 
-        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family = $this->familyProphecy();
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
         $this->productFamilyRepository->findOneBy(['productUuid' => 'uuid-1'])->willReturn($family->reveal());
@@ -504,7 +618,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
 
         $this->visitor()->visitFormMetadata($form, 'en', ['id' => 'uuid-1']);
 
-        $section = $form->getItems()['attributes'];
+        $section = $form->getItems()['product_family_5'];
         self::assertInstanceOf(SectionMetadata::class, $section);
         $field = $section->getItems()['attributes/7'];
         self::assertInstanceOf(FieldMetadata::class, $field);
