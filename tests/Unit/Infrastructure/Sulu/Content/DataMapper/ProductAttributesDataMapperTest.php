@@ -22,6 +22,9 @@ use Prophecy\Prophecy\ObjectProphecy;
 use Sulu\Content\Domain\Model\DimensionContentInterface;
 use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
 use Sulu\Product\Application\AttributeType\NumberAttributeType;
+use Sulu\Product\Application\AttributeType\RangeAttributeType;
+use Sulu\Product\Application\AttributeType\TextAttributeType;
+use Sulu\Product\Domain\Exception\IncompleteProductAttributeRangeException;
 use Sulu\Product\Domain\Exception\RequiredProductAttributeMissingException;
 use Sulu\Product\Domain\Model\AttributeInterface;
 use Sulu\Product\Domain\Model\Product;
@@ -29,6 +32,7 @@ use Sulu\Product\Domain\Model\ProductAttributeValue;
 use Sulu\Product\Domain\Model\ProductAttributeValueInterface;
 use Sulu\Product\Domain\Model\ProductDimensionContent;
 use Sulu\Product\Domain\Model\ProductDimensionContentInterface;
+use Sulu\Product\Domain\Model\ProductFamily;
 use Sulu\Product\Domain\Model\ProductFamilyAttributeInterface;
 use Sulu\Product\Domain\Model\ProductFamilyInterface;
 use Sulu\Product\Domain\Model\ProductInterface;
@@ -44,7 +48,7 @@ class ProductAttributesDataMapperTest extends TestCase
     protected function setUp(): void
     {
         $this->mapper = new ProductAttributesDataMapper(
-            new AttributeTypeRegistry([new NumberAttributeType()]),
+            new AttributeTypeRegistry([new NumberAttributeType(), new RangeAttributeType(), new TextAttributeType()]),
         );
     }
 
@@ -171,8 +175,6 @@ class ProductAttributesDataMapperTest extends TestCase
 
     public function testRemovesValueWhenNull(): void
     {
-        $concretePdc = new ProductDimensionContent(new Product());
-
         /** @var ObjectProphecy<AttributeInterface> $attribute */
         $attribute = $this->prophesize(AttributeInterface::class);
         $attribute->getId()->willReturn(1);
@@ -180,7 +182,12 @@ class ProductAttributesDataMapperTest extends TestCase
         $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
         $attribute->isLocalized()->willReturn(false);
 
-        $existingValue = new ProductAttributeValue($concretePdc, $attribute->reveal(), 'attr-1');
+        /** @var ObjectProphecy<ProductDimensionContentInterface> $unloc */
+        $unloc = $this->prophesize(ProductDimensionContentInterface::class);
+
+        // The row's own dimension content is what removal targets, so it must be the same
+        // object the mapper receives — not an unrelated dimension content instance.
+        $existingValue = new ProductAttributeValue($unloc->reveal(), $attribute->reveal(), 'attr-1');
         $existingValue->setNumber(5.0);
 
         /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttribute */
@@ -192,8 +199,6 @@ class ProductAttributesDataMapperTest extends TestCase
         $family = $this->prophesize(ProductFamilyInterface::class);
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
-        /** @var ObjectProphecy<ProductDimensionContentInterface> $unloc */
-        $unloc = $this->prophesize(ProductDimensionContentInterface::class);
         $unloc->getProductFamily()->willReturn($family->reveal());
         $unloc->getResource()->willReturn($this->prophesizeNonVariantResource());
         $unloc->getAttributes()->willReturn(new ArrayCollection([$existingValue]));
@@ -208,8 +213,6 @@ class ProductAttributesDataMapperTest extends TestCase
 
     public function testIsEmptyForEmptyString(): void
     {
-        $concretePdc = new ProductDimensionContent(new Product());
-
         /** @var ObjectProphecy<AttributeInterface> $attribute */
         $attribute = $this->prophesize(AttributeInterface::class);
         $attribute->getId()->willReturn(1);
@@ -217,7 +220,10 @@ class ProductAttributesDataMapperTest extends TestCase
         $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
         $attribute->isLocalized()->willReturn(false);
 
-        $existingValue = new ProductAttributeValue($concretePdc, $attribute->reveal(), 'attr-1');
+        /** @var ObjectProphecy<ProductDimensionContentInterface> $unloc */
+        $unloc = $this->prophesize(ProductDimensionContentInterface::class);
+
+        $existingValue = new ProductAttributeValue($unloc->reveal(), $attribute->reveal(), 'attr-1');
         $existingValue->setNumber(3.0);
 
         /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttribute */
@@ -229,8 +235,6 @@ class ProductAttributesDataMapperTest extends TestCase
         $family = $this->prophesize(ProductFamilyInterface::class);
         $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
 
-        /** @var ObjectProphecy<ProductDimensionContentInterface> $unloc */
-        $unloc = $this->prophesize(ProductDimensionContentInterface::class);
         $unloc->getProductFamily()->willReturn($family->reveal());
         $unloc->getResource()->willReturn($this->prophesizeNonVariantResource());
         $unloc->getAttributes()->willReturn(new ArrayCollection([$existingValue]));
@@ -358,8 +362,6 @@ class ProductAttributesDataMapperTest extends TestCase
 
     public function testRemovesLocalizedValueFromLocalizedDimensionContent(): void
     {
-        $concretePdc = new ProductDimensionContent(new Product());
-
         /** @var ObjectProphecy<AttributeInterface> $attribute */
         $attribute = $this->prophesize(AttributeInterface::class);
         $attribute->getId()->willReturn(1);
@@ -367,7 +369,10 @@ class ProductAttributesDataMapperTest extends TestCase
         $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
         $attribute->isLocalized()->willReturn(true);
 
-        $existingValue = new ProductAttributeValue($concretePdc, $attribute->reveal(), 'attr-1');
+        /** @var ObjectProphecy<ProductDimensionContentInterface> $loc */
+        $loc = $this->prophesize(ProductDimensionContentInterface::class);
+
+        $existingValue = new ProductAttributeValue($loc->reveal(), $attribute->reveal(), 'attr-1');
         $existingValue->setNumber(5.0);
 
         /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttribute */
@@ -385,8 +390,6 @@ class ProductAttributesDataMapperTest extends TestCase
         $unloc->getResource()->willReturn($this->prophesizeNonVariantResource());
         $unloc->getAttributes()->willReturn(new ArrayCollection());
         $unloc->removeAttribute(Argument::cetera())->shouldNotBeCalled();
-        /** @var ObjectProphecy<ProductDimensionContentInterface> $loc */
-        $loc = $this->prophesize(ProductDimensionContentInterface::class);
         $loc->getAttributes()->willReturn(new ArrayCollection([$existingValue]));
         $loc->removeAttribute($existingValue)->shouldBeCalled()->willReturn($loc->reveal());
 
@@ -423,6 +426,162 @@ class ProductAttributesDataMapperTest extends TestCase
         $this->expectExceptionMessage('attr-1');
 
         $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['1_value' => null]]);
+    }
+
+    public function testCreatesBothRangeRows(): void
+    {
+        $fixture = $this->makeMultiPartFixture([
+            ['id' => 7, 'type' => AttributeInterface::TYPE_RANGE],
+        ]);
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_min' => '10', '7_max' => '20']]);
+
+        self::assertCount(2, $fixture['unloc']->getAttributes());
+    }
+
+    public function testExplicitFullClearRemovesEveryPart(): void
+    {
+        $fixture = $this->makeMultiPartFixture([
+            ['id' => 7, 'type' => AttributeInterface::TYPE_RANGE],
+        ]);
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_min' => '10', '7_max' => '20']]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_min' => '', '7_max' => '']]);
+
+        self::assertCount(0, $fixture['unloc']->getAttributes());
+    }
+
+    public function testPartialSubmissionThrowsAndAttachesNothing(): void
+    {
+        $fixture = $this->makeMultiPartFixture([
+            ['id' => 7, 'type' => AttributeInterface::TYPE_RANGE],
+        ]);
+
+        try {
+            $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_min' => '10']]);
+            self::fail('Expected a validation exception.');
+        } catch (IncompleteProductAttributeRangeException) {
+            // expected
+        }
+
+        self::assertCount(0, $fixture['unloc']->getAttributes());
+    }
+
+    public function testAttributeAbsentFromPayloadKeepsStoredRows(): void
+    {
+        $fixture = $this->makeMultiPartFixture([
+            ['id' => 7, 'type' => AttributeInterface::TYPE_RANGE],
+            ['id' => 9, 'type' => AttributeInterface::TYPE_TEXT],
+        ]);
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_min' => '10', '7_max' => '20']]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['9_value' => 'x']]);
+
+        self::assertCount(3, $fixture['unloc']->getAttributes());   // 7_min, 7_max, 9_value
+    }
+
+    public function testZeroBoundIsNotTreatedAsEmpty(): void
+    {
+        $fixture = $this->makeMultiPartFixture([
+            ['id' => 7, 'type' => AttributeInterface::TYPE_RANGE],
+        ]);
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_min' => '0', '7_max' => '0']]);
+
+        self::assertCount(2, $fixture['unloc']->getAttributes());
+    }
+
+    public function testRequiredRangeWithOnlyOnePartFails(): void
+    {
+        $fixture = $this->makeMultiPartFixture([
+            ['id' => 7, 'type' => AttributeInterface::TYPE_RANGE, 'required' => true],
+        ]);
+
+        // Pre-seed a single 'min' row directly on the dimension content; 'max' was never written.
+        $existingMin = new ProductAttributeValue($fixture['unloc'], $fixture['attributes'][7], 'attr-7', 'min');
+        $existingMin->setNumber(10.0);
+        $fixture['unloc']->addAttribute($existingMin);
+
+        $this->expectException(RequiredProductAttributeMissingException::class);
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => []]);
+    }
+
+    public function testVariantIgnoresNonVariantSpecificAttribute(): void
+    {
+        $fixture = $this->makeMultiPartFixture(
+            [['id' => 7, 'type' => AttributeInterface::TYPE_TEXT, 'variantSpecific' => false]],
+            isVariantResource: true,
+        );
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_value' => 'x']]);
+
+        self::assertCount(0, $fixture['unloc']->getAttributes());
+    }
+
+    public function testHalfFilledRangeWithAbsentKeyIsRejectedNotCleared(): void
+    {
+        $fixture = $this->makeMultiPartFixture([
+            ['id' => 7, 'type' => AttributeInterface::TYPE_RANGE],
+        ]);
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_min' => '10', '7_max' => '20']]);
+
+        // '7_max' is entirely absent from the payload, not just empty — a half-filled range,
+        // not an explicit full clear. Must be rejected, and the stored rows must survive.
+        try {
+            $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_min' => null]]);
+            self::fail('Expected a validation exception.');
+        } catch (IncompleteProductAttributeRangeException) {
+            // expected
+        }
+
+        self::assertCount(2, $fixture['unloc']->getAttributes());
+    }
+
+    /**
+     * @param list<array{id: int, type: string, required?: bool, variantSpecific?: bool}> $attributeSpecs
+     *
+     * @return array{
+     *     unloc: ProductDimensionContentInterface,
+     *     loc: ProductDimensionContentInterface,
+     *     attributes: array<int, AttributeInterface>,
+     * }
+     */
+    private function makeMultiPartFixture(array $attributeSpecs, bool $isVariantResource = false): array
+    {
+        $family = new ProductFamily();
+        $attributes = [];
+
+        foreach ($attributeSpecs as $spec) {
+            /** @var ObjectProphecy<AttributeInterface> $attributeProphecy */
+            $attributeProphecy = $this->prophesize(AttributeInterface::class);
+            $attributeProphecy->getId()->willReturn($spec['id']);
+            $attributeProphecy->getKey()->willReturn('attr-' . $spec['id']);
+            $attributeProphecy->getType()->willReturn($spec['type']);
+            $attributeProphecy->isLocalized()->willReturn(false);
+            $attribute = $attributeProphecy->reveal();
+            $attributes[$spec['id']] = $attribute;
+
+            /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttributeProphecy */
+            $familyAttributeProphecy = $this->prophesize(ProductFamilyAttributeInterface::class);
+            $familyAttributeProphecy->getAttribute()->willReturn($attribute);
+            $familyAttributeProphecy->isRequired()->willReturn($spec['required'] ?? false);
+            $familyAttributeProphecy->isVariantSpecific()->willReturn($spec['variantSpecific'] ?? true);
+
+            $family->addFamilyAttribute($familyAttributeProphecy->reveal());
+        }
+
+        /** @var ObjectProphecy<ProductInterface> $resource */
+        $resource = $this->prophesize(ProductInterface::class);
+        $resource->isType(ProductInterface::TYPE_VARIANT)->willReturn($isVariantResource);
+
+        $unloc = new ProductDimensionContent($resource->reveal());
+        $unloc->setProductFamily($family);
+
+        $loc = new ProductDimensionContent($resource->reveal());
+
+        return ['unloc' => $unloc, 'loc' => $loc, 'attributes' => $attributes];
     }
 
     private function prophesizeNonVariantResource(): ProductInterface

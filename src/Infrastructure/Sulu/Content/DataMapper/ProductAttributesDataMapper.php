@@ -91,18 +91,26 @@ class ProductAttributesDataMapper implements DataMapperInterface
             $grouped[$attributeId][$m[2]] = $raw;
         }
 
+        $isVariant = $unlocalizedDimensionContent->getResource()->isType(ProductInterface::TYPE_VARIANT);
+
         foreach ($grouped as $attributeId => $rawByKey) {
             $familyAttribute = $familyAttributes[$attributeId];
+
+            if ($isVariant && !$familyAttribute->isVariantSpecific()) {
+                continue;   // shared attributes belong to the parent, never the variant
+            }
+
             $attribute = $familyAttribute->getAttribute();
             $targetDimensionContent = $attribute->isLocalized()
                 ? $localizedDimensionContent
                 : $unlocalizedDimensionContent;
             $type = $this->attributeTypeRegistry->get($attribute->getType());
+            $keys = $type->getValueKeys();
             $existingRows = $allExisting[$attributeId] ?? [];
 
-            if ($this->isEmptyGroup($rawByKey)) {
+            if ($this->isExplicitFullClear($rawByKey, $keys)) {
                 foreach ($existingRows as $existingRow) {
-                    $targetDimensionContent->removeAttribute($existingRow);
+                    $existingRow->getProductDimensionContent()->removeAttribute($existingRow);
                 }
                 unset($allExisting[$attributeId]);
 
@@ -112,7 +120,7 @@ class ProductAttributesDataMapper implements DataMapperInterface
             /** @var array<string, ProductAttributeValueInterface> $rowsByKey */
             $rowsByKey = [];
             $newRows = [];
-            foreach ($type->getValueKeys() as $valueKey) {
+            foreach ($keys as $valueKey) {
                 $row = $existingRows[$valueKey] ?? null;
                 if (null === $row) {
                     $row = new ProductAttributeValue($targetDimensionContent, $attribute, $attribute->getKey(), $valueKey);
@@ -131,8 +139,6 @@ class ProductAttributesDataMapper implements DataMapperInterface
 
             $allExisting[$attributeId] = $rowsByKey;
         }
-
-        $isVariant = $unlocalizedDimensionContent->getResource()->isType(ProductInterface::TYPE_VARIANT);
 
         $this->assertRequiredSatisfied($familyAttributes, $allExisting, $isVariant);
     }
@@ -172,12 +178,16 @@ class ProductAttributesDataMapper implements DataMapperInterface
     }
 
     /**
+     * Clearing requires every declared key to be present and empty. A partial payload is a
+     * half-filled value, which the type rejects — not a clear.
+     *
      * @param array<string, mixed> $rawByKey
+     * @param list<string> $keys
      */
-    private function isEmptyGroup(array $rawByKey): bool
+    private function isExplicitFullClear(array $rawByKey, array $keys): bool
     {
-        foreach ($rawByKey as $raw) {
-            if (!$this->isEmpty($raw)) {
+        foreach ($keys as $key) {
+            if (!\array_key_exists($key, $rawByKey) || !$this->isEmpty($rawByKey[$key])) {
                 return false;
             }
         }
