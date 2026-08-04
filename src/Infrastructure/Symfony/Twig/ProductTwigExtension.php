@@ -22,6 +22,7 @@ use Sulu\Content\Infrastructure\Doctrine\DimensionContentQueryEnhancer;
 use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
 use Sulu\Product\Domain\Measurement\MeasurementRegistry;
 use Sulu\Product\Domain\Model\AttributeInterface;
+use Sulu\Product\Domain\Model\ProductAttributeValueInterface;
 use Sulu\Product\Domain\Model\ProductDimensionContentInterface;
 use Sulu\Product\Domain\Model\ProductInterface;
 use Sulu\Product\Domain\Repository\ProductRepositoryInterface;
@@ -107,31 +108,39 @@ class ProductTwigExtension extends AbstractExtension
      */
     private function formatAttributes(ProductDimensionContentInterface $dimensionContent, string $locale): array
     {
+        /** @var array<string, ProductAttributeValueInterface> $firstRowByAttribute */
+        $firstRowByAttribute = [];
+        /** @var array<string, array<string, ProductAttributeValueInterface>> $rowsByAttribute */
+        $rowsByAttribute = [];
+        foreach ($dimensionContent->getAttributes() as $row) {
+            $attributeKey = $row->getAttributeKey();
+            $firstRowByAttribute[$attributeKey] ??= $row;
+            $rowsByAttribute[$attributeKey][$row->getValueKey()] = $row;
+        }
+
         $result = [];
 
-        foreach ($dimensionContent->getAttributes() as $productAttributeValue) {
-            $attribute = $productAttributeValue->getAttribute();
+        foreach ($firstRowByAttribute as $attributeKey => $first) {
+            $rows = $rowsByAttribute[$attributeKey];
+            $attribute = $first->getAttribute();
 
             $value = match ($attribute->getType()) {
-                AttributeInterface::TYPE_OPTIONS => $productAttributeValue->getAttributeOption()?->getTranslation($locale)?->getName()
-                    ?? $productAttributeValue->getAttributeOptionKey(),
-                AttributeInterface::TYPE_TEXT => $productAttributeValue->getText(),
-                AttributeInterface::TYPE_NUMBER => $productAttributeValue->getNumber(),
-                AttributeInterface::TYPE_DATE => $this->resolveDate($productAttributeValue->getNumber()),
-                default => $this->attributeTypeRegistry->has($attribute->getType())
-                    ? ($this->attributeTypeRegistry->get($attribute->getType())->readValue(['value' => $productAttributeValue])['value'] ?? null)
-                    : null,
+                AttributeInterface::TYPE_OPTIONS => $first->getAttributeOption()?->getTranslation($locale)?->getName()
+                    ?? $first->getAttributeOptionKey(),
+                AttributeInterface::TYPE_TEXT => $first->getText(),
+                AttributeInterface::TYPE_NUMBER => $first->getNumber(),
+                AttributeInterface::TYPE_DATE => $this->resolveDate($first->getNumber()),
+                default => $this->readGeneric($attribute, $rows),
             };
 
             $formattedValue = match ($attribute->getType()) {
-                AttributeInterface::TYPE_TEXT => $this->formatValue($attribute, $productAttributeValue->getText()),
-                AttributeInterface::TYPE_NUMBER => $this->formatValue($attribute, $productAttributeValue->getNumber()),
-                default => null,
+                AttributeInterface::TYPE_OPTIONS, AttributeInterface::TYPE_DATE => null,
+                default => $this->formatValue($attribute, $rows),
             };
 
             $result[] = [
-                'key' => $productAttributeValue->getAttributeKey(),
-                'label' => $attribute->getTranslation($locale)?->getName() ?? $productAttributeValue->getAttributeKey(),
+                'key' => $first->getAttributeKey(),
+                'label' => $attribute->getTranslation($locale)?->getName() ?? $first->getAttributeKey(),
                 'type' => $attribute->getType(),
                 'value' => $value,
                 'formattedValue' => $formattedValue,
@@ -139,6 +148,25 @@ class ProductTwigExtension extends AbstractExtension
         }
 
         return $result;
+    }
+
+    /**
+     * Guarded registry lookup for types without an explicit match arm above (e.g. range,
+     * or any type registered by extending code). Returns the raw scalar for a single-key
+     * type (so plain 'value' unwraps like before) and the whole keyed map otherwise.
+     *
+     * @param array<string, ProductAttributeValueInterface> $rows
+     */
+    private function readGeneric(AttributeInterface $attribute, array $rows): mixed
+    {
+        if (!$this->attributeTypeRegistry->has($attribute->getType())) {
+            return null;
+        }
+
+        $type = $this->attributeTypeRegistry->get($attribute->getType());
+        $read = $type->readValue($rows);
+
+        return ['value'] === $type->getValueKeys() ? $read['value'] : $read;
     }
 
     private function resolveDate(?float $timestamp): ?string
@@ -150,12 +178,11 @@ class ProductTwigExtension extends AbstractExtension
         return (new \DateTimeImmutable('@' . (int) $timestamp))->format('Y-m-d');
     }
 
-    private function formatValue(AttributeInterface $attribute, string|float|null $value): ?string
+    /**
+     * @param array<string, ProductAttributeValueInterface> $rows
+     */
+    private function formatValue(AttributeInterface $attribute, array $rows): ?string
     {
-        if (null === $value || '' === $value) {
-            return null;
-        }
-
         $config = $attribute->getConfig();
         $format = $config['displayFormat'] ?? null;
 
@@ -163,13 +190,26 @@ class ProductTwigExtension extends AbstractExtension
             return null;
         }
 
+        if (!$this->attributeTypeRegistry->has($attribute->getType())) {
+            return null;
+        }
+
+        $read = $this->attributeTypeRegistry->get($attribute->getType())->readValue($rows);
+        $filled = \array_filter($read, static fn (mixed $v): bool => null !== $v && '' !== $v);
+        if (\count($filled) !== \count($read)) {
+            return null;
+        }
+
         $unitKey = $config['unit'] ?? null;
         $unit = \is_string($unitKey) ? $this->measurementRegistry->findUnit($unitKey) : null;
 
-        return \trim(\str_replace(
-            ['%value%', '%unit%'],
-            [(string) $value, $unit?->getSymbol() ?? ''],
-            $format,
-        ));
+        $search = ['%unit%'];
+        $replace = [$unit?->getSymbol() ?? ''];
+        foreach ($read as $key => $partValue) {
+            $search[] = '%' . $key . '%';
+            $replace[] = \is_scalar($partValue) ? (string) $partValue : '';
+        }
+
+        return \trim(\str_replace($search, $replace, $format));
     }
 }

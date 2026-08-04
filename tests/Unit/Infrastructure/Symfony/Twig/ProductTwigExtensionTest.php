@@ -26,6 +26,11 @@ use Sulu\Content\Application\ContentAggregator\ContentAggregatorInterface;
 use Sulu\Content\Application\ContentResolver\ContentResolverInterface;
 use Sulu\Product\Application\AttributeType\AbstractAttributeType;
 use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
+use Sulu\Product\Application\AttributeType\DateAttributeType;
+use Sulu\Product\Application\AttributeType\NumberAttributeType;
+use Sulu\Product\Application\AttributeType\OptionsAttributeType;
+use Sulu\Product\Application\AttributeType\RangeAttributeType;
+use Sulu\Product\Application\AttributeType\TextAttributeType;
 use Sulu\Product\Domain\Measurement\MeasurementRegistry;
 use Sulu\Product\Domain\Model\Attribute;
 use Sulu\Product\Domain\Model\AttributeGroup;
@@ -78,7 +83,12 @@ class ProductTwigExtensionTest extends TestCase
             $this->referenceStore->reveal(),
             $this->contentResolver->reveal(),
             new MeasurementRegistry(),
-            new AttributeTypeRegistry([]),
+            new AttributeTypeRegistry([
+                new TextAttributeType(),
+                new NumberAttributeType(),
+                new OptionsAttributeType(),
+                new DateAttributeType(),
+            ]),
         );
     }
 
@@ -627,6 +637,36 @@ class ProductTwigExtensionTest extends TestCase
         $this->assertNull($result['attributes'][0]['value']);
     }
 
+    public function testLoadProductReturnsNullFormattedValueForUnregisteredTypeWithFormat(): void
+    {
+        $product = new Product('uuid-1');
+        $pdc = new ProductDimensionContent($product);
+
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setKey('custom');
+        $attribute->setType('unknown_type');
+        $attribute->setConfig(['displayFormat' => 'ca. %value%']);
+
+        $productAttributeValue = new ProductAttributeValue($pdc, $attribute, 'custom');
+        $productAttributeValue->setText('some-value');
+
+        $pdc->addAttribute($productAttributeValue);
+
+        $this->productRepository->findOneBy(Argument::cetera())->willReturn($product);
+        $this->contentAggregator->aggregate($product, Argument::type('array'))
+            ->willReturn($pdc);
+        $this->contentResolver->resolve($pdc, [])->willReturn([]);
+        $this->referenceStore->add('uuid-1', ProductInterface::RESOURCE_KEY)->shouldBeCalled();
+
+        $result = $this->extension->loadProduct('uuid-1', [], 'en');
+
+        $this->assertIsArray($result);
+        /** @var array{attributes: list<array{key: string, label: string, type: string, value: mixed, formattedValue: string|null}>} $result */
+        $this->assertCount(1, $result['attributes']);
+        // unregistered type: the has() guard prevents formatValue() from throwing
+        $this->assertNull($result['attributes'][0]['formattedValue']);
+    }
+
     public function testLoadProductFormatsRegisteredTypeWithoutExplicitMatchArm(): void
     {
         $product = new Product('uuid-1');
@@ -685,5 +725,213 @@ class ProductTwigExtensionTest extends TestCase
         $this->assertCount(1, $result['attributes']);
         $this->assertSame('custom_type', $result['attributes'][0]['type']);
         $this->assertSame('stub-value', $result['attributes'][0]['value']);
+    }
+
+    public function testLoadProductGroupsRangeRowsIntoOneEntryWithBothBounds(): void
+    {
+        $product = new Product('uuid-1');
+        $pdc = new ProductDimensionContent($product);
+
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setKey('dimension');
+        $attribute->setType(AttributeInterface::TYPE_RANGE);
+
+        $minRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'min');
+        $minRow->setNumber(10.0);
+        $maxRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'max');
+        $maxRow->setNumber(20.0);
+
+        $pdc->addAttribute($minRow);
+        $pdc->addAttribute($maxRow);
+
+        $extension = new ProductTwigExtension(
+            $this->productRepository->reveal(),
+            $this->contentAggregator->reveal(),
+            $this->requestAnalyzer->reveal(),
+            $this->referenceStore->reveal(),
+            $this->contentResolver->reveal(),
+            new MeasurementRegistry(),
+            new AttributeTypeRegistry([new RangeAttributeType()]),
+        );
+
+        $this->productRepository->findOneBy(Argument::cetera())->willReturn($product);
+        $this->contentAggregator->aggregate($product, Argument::type('array'))
+            ->willReturn($pdc);
+        $this->contentResolver->resolve($pdc, [])->willReturn([]);
+        $this->referenceStore->add('uuid-1', ProductInterface::RESOURCE_KEY)->shouldBeCalled();
+
+        $result = $extension->loadProduct('uuid-1', [], 'en');
+
+        $this->assertIsArray($result);
+        /** @var array{attributes: list<array{key: string, label: string, type: string, value: mixed, formattedValue: string|null}>} $result */
+        $this->assertCount(1, $result['attributes']);
+        $this->assertSame(AttributeInterface::TYPE_RANGE, $result['attributes'][0]['type']);
+        $this->assertSame(['min' => 10.0, 'max' => 20.0], $result['attributes'][0]['value']);
+    }
+
+    public function testLoadProductFormatsRangeDisplayFormatWithPartPlaceholders(): void
+    {
+        $product = new Product('uuid-1');
+        $pdc = new ProductDimensionContent($product);
+
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setKey('dimension');
+        $attribute->setType(AttributeInterface::TYPE_RANGE);
+        $attribute->setConfig(['displayFormat' => '%min% - %max% %unit%', 'unit' => 'MILLIMETER']);
+
+        $minRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'min');
+        $minRow->setNumber(10.0);
+        $maxRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'max');
+        $maxRow->setNumber(20.0);
+
+        $pdc->addAttribute($minRow);
+        $pdc->addAttribute($maxRow);
+
+        $extension = new ProductTwigExtension(
+            $this->productRepository->reveal(),
+            $this->contentAggregator->reveal(),
+            $this->requestAnalyzer->reveal(),
+            $this->referenceStore->reveal(),
+            $this->contentResolver->reveal(),
+            new MeasurementRegistry(),
+            new AttributeTypeRegistry([new RangeAttributeType()]),
+        );
+
+        $this->productRepository->findOneBy(Argument::cetera())->willReturn($product);
+        $this->contentAggregator->aggregate($product, Argument::type('array'))
+            ->willReturn($pdc);
+        $this->contentResolver->resolve($pdc, [])->willReturn([]);
+        $this->referenceStore->add('uuid-1', ProductInterface::RESOURCE_KEY)->shouldBeCalled();
+
+        $result = $extension->loadProduct('uuid-1', [], 'en');
+
+        $this->assertIsArray($result);
+        /** @var array{attributes: list<array{key: string, label: string, type: string, value: mixed, formattedValue: string|null}>} $result */
+        $this->assertCount(1, $result['attributes']);
+        $this->assertSame('10 - 20 mm', $result['attributes'][0]['formattedValue']);
+    }
+
+    public function testLoadProductLeavesValuePlaceholderLiteralForRange(): void
+    {
+        $product = new Product('uuid-1');
+        $pdc = new ProductDimensionContent($product);
+
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setKey('dimension');
+        $attribute->setType(AttributeInterface::TYPE_RANGE);
+        $attribute->setConfig(['displayFormat' => '%value%']);
+
+        $minRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'min');
+        $minRow->setNumber(10.0);
+        $maxRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'max');
+        $maxRow->setNumber(20.0);
+
+        $pdc->addAttribute($minRow);
+        $pdc->addAttribute($maxRow);
+
+        $extension = new ProductTwigExtension(
+            $this->productRepository->reveal(),
+            $this->contentAggregator->reveal(),
+            $this->requestAnalyzer->reveal(),
+            $this->referenceStore->reveal(),
+            $this->contentResolver->reveal(),
+            new MeasurementRegistry(),
+            new AttributeTypeRegistry([new RangeAttributeType()]),
+        );
+
+        $this->productRepository->findOneBy(Argument::cetera())->willReturn($product);
+        $this->contentAggregator->aggregate($product, Argument::type('array'))
+            ->willReturn($pdc);
+        $this->contentResolver->resolve($pdc, [])->willReturn([]);
+        $this->referenceStore->add('uuid-1', ProductInterface::RESOURCE_KEY)->shouldBeCalled();
+
+        $result = $extension->loadProduct('uuid-1', [], 'en');
+
+        $this->assertIsArray($result);
+        /** @var array{attributes: list<array{key: string, label: string, type: string, value: mixed, formattedValue: string|null}>} $result */
+        $this->assertCount(1, $result['attributes']);
+        $this->assertSame('%value%', $result['attributes'][0]['formattedValue']);
+    }
+
+    public function testLoadProductReturnsNullFormattedValueForRangeWithoutDisplayFormat(): void
+    {
+        $product = new Product('uuid-1');
+        $pdc = new ProductDimensionContent($product);
+
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setKey('dimension');
+        $attribute->setType(AttributeInterface::TYPE_RANGE);
+
+        $minRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'min');
+        $minRow->setNumber(10.0);
+        $maxRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'max');
+        $maxRow->setNumber(20.0);
+
+        $pdc->addAttribute($minRow);
+        $pdc->addAttribute($maxRow);
+
+        $extension = new ProductTwigExtension(
+            $this->productRepository->reveal(),
+            $this->contentAggregator->reveal(),
+            $this->requestAnalyzer->reveal(),
+            $this->referenceStore->reveal(),
+            $this->contentResolver->reveal(),
+            new MeasurementRegistry(),
+            new AttributeTypeRegistry([new RangeAttributeType()]),
+        );
+
+        $this->productRepository->findOneBy(Argument::cetera())->willReturn($product);
+        $this->contentAggregator->aggregate($product, Argument::type('array'))
+            ->willReturn($pdc);
+        $this->contentResolver->resolve($pdc, [])->willReturn([]);
+        $this->referenceStore->add('uuid-1', ProductInterface::RESOURCE_KEY)->shouldBeCalled();
+
+        $result = $extension->loadProduct('uuid-1', [], 'en');
+
+        $this->assertIsArray($result);
+        /** @var array{attributes: list<array{key: string, label: string, type: string, value: mixed, formattedValue: string|null}>} $result */
+        $this->assertCount(1, $result['attributes']);
+        $this->assertNull($result['attributes'][0]['formattedValue']);
+    }
+
+    public function testLoadProductReturnsNullFormattedValueForPartiallyFilledRange(): void
+    {
+        $product = new Product('uuid-1');
+        $pdc = new ProductDimensionContent($product);
+
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setKey('dimension');
+        $attribute->setType(AttributeInterface::TYPE_RANGE);
+        $attribute->setConfig(['displayFormat' => '%min% - %max% %unit%']);
+
+        $minRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'min');
+        $maxRow = new ProductAttributeValue($pdc, $attribute, 'dimension', 'max');
+        $maxRow->setNumber(20.0);
+
+        $pdc->addAttribute($minRow);
+        $pdc->addAttribute($maxRow);
+
+        $extension = new ProductTwigExtension(
+            $this->productRepository->reveal(),
+            $this->contentAggregator->reveal(),
+            $this->requestAnalyzer->reveal(),
+            $this->referenceStore->reveal(),
+            $this->contentResolver->reveal(),
+            new MeasurementRegistry(),
+            new AttributeTypeRegistry([new RangeAttributeType()]),
+        );
+
+        $this->productRepository->findOneBy(Argument::cetera())->willReturn($product);
+        $this->contentAggregator->aggregate($product, Argument::type('array'))
+            ->willReturn($pdc);
+        $this->contentResolver->resolve($pdc, [])->willReturn([]);
+        $this->referenceStore->add('uuid-1', ProductInterface::RESOURCE_KEY)->shouldBeCalled();
+
+        $result = $extension->loadProduct('uuid-1', [], 'en');
+
+        $this->assertIsArray($result);
+        /** @var array{attributes: list<array{key: string, label: string, type: string, value: mixed, formattedValue: string|null}>} $result */
+        $this->assertCount(1, $result['attributes']);
+        $this->assertNull($result['attributes'][0]['formattedValue']);
     }
 }
