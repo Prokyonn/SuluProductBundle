@@ -21,6 +21,7 @@ use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\FieldMetadata;
 use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\FormMetadata;
 use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\FormMetadataLoaderInterface;
 use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\OptionMetadata;
+use Sulu\Product\Application\AttributeType\AbstractAttributeType;
 use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
 use Sulu\Product\Application\AttributeType\NumberAttributeType;
 use Sulu\Product\Domain\Measurement\MeasurementRegistry;
@@ -181,14 +182,180 @@ class AttributeFieldFactoryTest extends TestCase
         $result = $this->factory()->build($familyAttribute->reveal(), 'en');
 
         self::assertNotNull($result);
-        [$field, $unitField] = $result;
+        [$fields, $unitField] = $result;
 
-        self::assertSame('attributes/7', $field->getName());
-        self::assertSame('Weight', $field->getLabel('en'));
-        self::assertTrue($field->isRequired());
-        self::assertSame('Heavy item', $field->getDescription('en'));
-        self::assertSame(12, $field->getColSpan());
+        self::assertCount(1, $fields);
+        self::assertSame('attributes/7_value', $fields[0]->getName());
+        self::assertSame('Weight', $fields[0]->getLabel('en'));
+        self::assertTrue($fields[0]->isRequired());
+        self::assertSame('Heavy item', $fields[0]->getDescription('en'));
+        self::assertSame(12, $fields[0]->getColSpan());
         self::assertNull($unitField);
+    }
+
+    public function testSingleKeyTypeProducesSuffixedField(): void
+    {
+        $attribute = $this->attribute(7, 'weight', AttributeInterface::TYPE_NUMBER, [], 'Weight');
+        $familyAttribute = $this->familyAttribute($attribute->reveal());
+
+        $this->formMetadataLoader->getMetadata('product_attribute_number', 'en', [])
+            ->willReturn($this->fragmentWithValueField());
+
+        $result = $this->factory()->build($familyAttribute->reveal(), 'en');
+
+        self::assertNotNull($result);
+        [$fields, $unitField] = $result;
+
+        self::assertCount(1, $fields);
+        self::assertSame('attributes/7_value', $fields[0]->getName());
+        self::assertSame(12, $fields[0]->getColSpan());
+        self::assertNull($unitField);
+    }
+
+    public function testUnitSidecarShrinksSingleValueFieldToEight(): void
+    {
+        $attribute = $this->attribute(7, 'length', AttributeInterface::TYPE_NUMBER, ['unit' => 'MILLIMETER'], 'Length');
+        $familyAttribute = $this->familyAttribute($attribute->reveal());
+
+        $this->formMetadataLoader->getMetadata('product_attribute_number', 'en', [])
+            ->willReturn($this->fragmentWithValueField());
+
+        $result = $this->factory()->build($familyAttribute->reveal(), 'en');
+
+        self::assertNotNull($result);
+        [$fields, $unitField] = $result;
+
+        self::assertSame(8, $fields[0]->getColSpan());
+        self::assertNotNull($unitField);
+        self::assertSame('attributes/7_unit', $unitField->getName());
+    }
+
+    /**
+     * A stub two-key type (standing in for the future `range` type) exercises the multi-key
+     * label suffix and the colspan-fitting remainder top-up, neither of which any currently
+     * registered single-key type can reach.
+     */
+    public function testMultiKeyTypeProducesLabeledFieldsAndDistributesColSpanRemainder(): void
+    {
+        $stubType = new class() extends AbstractAttributeType {
+            public function getKey(): string
+            {
+                return 'stub-multi';
+            }
+
+            public function getFormKey(): string
+            {
+                return 'product_attribute_stub_multi';
+            }
+
+            public function getValueKeys(): array
+            {
+                return ['min', 'max'];
+            }
+
+            public function readValue(array $values): array
+            {
+                return ['min' => null, 'max' => null];
+            }
+
+            public function writeValue(array $values, array $raw): void
+            {
+            }
+        };
+
+        $minField = new FieldMetadata('min');
+        $minField->setType('number');
+        $minField->setColSpan(5);
+
+        $maxField = new FieldMetadata('max');
+        $maxField->setType('number');
+        $maxField->setColSpan(5);
+
+        $fragment = new FormMetadata();
+        $fragment->setKey('product_attribute_stub_multi');
+        $fragment->addItem($minField);
+        $fragment->addItem($maxField);
+
+        $this->formMetadataLoader->getMetadata('product_attribute_stub_multi', 'en', [])
+            ->willReturn($fragment);
+
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnCallback(
+            static fn (string $id): string => 'sulu_product.value_key_min' === $id ? 'Min' : $id,
+        );
+
+        $factory = new AttributeFieldFactory(
+            new AttributeTypeRegistry([$stubType]),
+            $this->formMetadataLoader->reveal(),
+            new MeasurementRegistry(),
+            $translator,
+        );
+
+        $attribute = $this->attribute(9, 'range', 'stub-multi', [], 'Range');
+        $familyAttribute = $this->familyAttribute($attribute->reveal());
+
+        $result = $factory->build($familyAttribute->reveal(), 'en');
+
+        self::assertNotNull($result);
+        [$fields, $unitField] = $result;
+
+        self::assertCount(2, $fields);
+        self::assertSame('attributes/9_min', $fields[0]->getName());
+        self::assertSame('Range (Min)', $fields[0]->getLabel('en'));
+        self::assertSame('attributes/9_max', $fields[1]->getName());
+        self::assertSame('Range (max)', $fields[1]->getLabel('en'));
+
+        // 5 + 5 fits into 12 with a remainder of 2, floored to the first field.
+        self::assertSame(7, $fields[0]->getColSpan());
+        self::assertSame(5, $fields[1]->getColSpan());
+        self::assertNull($unitField);
+    }
+
+    public function testReturnsNullWhenDeclaredKeyHasNoTemplateProperty(): void
+    {
+        $stubType = new class() extends AbstractAttributeType {
+            public function getKey(): string
+            {
+                return 'stub';
+            }
+
+            public function getFormKey(): string
+            {
+                return 'product_attribute_number';
+            }
+
+            public function getValueKeys(): array
+            {
+                return ['missing'];
+            }
+
+            public function readValue(array $values): array
+            {
+                return ['missing' => null];
+            }
+
+            public function writeValue(array $values, array $raw): void
+            {
+            }
+        };
+
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturn('Unit');
+
+        $factory = new AttributeFieldFactory(
+            new AttributeTypeRegistry([$stubType]),
+            $this->formMetadataLoader->reveal(),
+            new MeasurementRegistry(),
+            $translator,
+        );
+
+        $attribute = $this->attribute(1, 'mystery', 'stub', [], 'Mystery');
+        $familyAttribute = $this->familyAttribute($attribute->reveal());
+
+        $this->formMetadataLoader->getMetadata('product_attribute_number', 'en', [])
+            ->willReturn($this->fragmentWithValueField());
+
+        self::assertNull($factory->build($familyAttribute->reveal(), 'en'));
     }
 
     public function testFallsBackToDefaultLocaleTranslationWhenRequestedLocaleHasNone(): void
@@ -211,10 +378,10 @@ class AttributeFieldFactoryTest extends TestCase
         $result = $this->factory()->build($familyAttribute->reveal(), 'en');
 
         self::assertNotNull($result);
-        [$field] = $result;
+        [$fields] = $result;
 
-        self::assertSame('Gewicht', $field->getLabel('en'));
-        self::assertNull($field->getDescription('en'));
+        self::assertSame('Gewicht', $fields[0]->getLabel('en'));
+        self::assertNull($fields[0]->getDescription('en'));
     }
 
     public function testFallsBackToAttributeKeyWhenNoTranslationExists(): void
@@ -228,9 +395,9 @@ class AttributeFieldFactoryTest extends TestCase
         $result = $this->factory()->build($familyAttribute->reveal(), 'en');
 
         self::assertNotNull($result);
-        [$field] = $result;
+        [$fields] = $result;
 
-        self::assertSame('weight', $field->getLabel('en'));
+        self::assertSame('weight', $fields[0]->getLabel('en'));
     }
 
     public function testBuildsUnitFieldWhenAttributeHasUnitConfigured(): void
@@ -244,9 +411,9 @@ class AttributeFieldFactoryTest extends TestCase
         $result = $this->factory()->build($familyAttribute->reveal(), 'en');
 
         self::assertNotNull($result);
-        [$field, $unitField] = $result;
+        [$fields, $unitField] = $result;
 
-        self::assertSame(8, $field->getColSpan());
+        self::assertSame(8, $fields[0]->getColSpan());
 
         self::assertNotNull($unitField);
         self::assertSame('attributes/4_unit', $unitField->getName());

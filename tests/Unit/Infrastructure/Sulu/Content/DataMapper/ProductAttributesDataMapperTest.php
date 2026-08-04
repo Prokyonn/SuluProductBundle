@@ -52,7 +52,7 @@ class ProductAttributesDataMapperTest extends TestCase
     {
         $other = $this->prophesize(DimensionContentInterface::class);
 
-        $this->mapper->map($other->reveal(), $other->reveal(), ['attributes' => [1 => 5.0]]);
+        $this->mapper->map($other->reveal(), $other->reveal(), ['attributes' => ['1_value' => 5.0]]);
 
         $this->addToAssertionCount(1);
     }
@@ -63,7 +63,7 @@ class ProductAttributesDataMapperTest extends TestCase
         $unloc = $this->prophesize(ProductDimensionContentInterface::class);
         $locOther = $this->prophesize(DimensionContentInterface::class);
 
-        $this->mapper->map($unloc->reveal(), $locOther->reveal(), ['attributes' => [1 => 5.0]]);
+        $this->mapper->map($unloc->reveal(), $locOther->reveal(), ['attributes' => ['1_value' => 5.0]]);
 
         $this->addToAssertionCount(1);
     }
@@ -89,7 +89,7 @@ class ProductAttributesDataMapperTest extends TestCase
         /** @var ObjectProphecy<ProductDimensionContentInterface> $loc */
         $loc = $this->prophesize(ProductDimensionContentInterface::class);
 
-        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => [1 => 5.0]]);
+        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => ['1_value' => 5.0]]);
 
         $unloc->getAttributes()->shouldNotHaveBeenCalled();
         $this->addToAssertionCount(1);
@@ -99,22 +99,64 @@ class ProductAttributesDataMapperTest extends TestCase
     {
         $fixture = $this->makeProductFixture(1, false);
 
-        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [99 => 5.0]]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['99_value' => 5.0]]);
 
         $fixture['unloc_prophecy']->addAttribute(Argument::cetera())->shouldNotHaveBeenCalled();
         $this->addToAssertionCount(1);
     }
 
-    public function testSkipsNonIntegerKeys(): void
+    public function testIgnoresUnitSidecarKey(): void
     {
         $fixture = $this->makeProductFixture(1, false);
 
         // "1_unit" is submitted alongside a number attribute value (unit selector); it must be ignored
-        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [1 => 7.5, '1_unit' => 'KILOGRAM']]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['1_value' => 7.5, '1_unit' => 'KILOGRAM']]);
 
         $fixture['unloc_prophecy']->addAttribute(Argument::that(
             static fn ($v): bool => $v instanceof ProductAttributeValueInterface && 7.5 === $v->getNumber()
         ))->shouldHaveBeenCalledOnce();
+    }
+
+    public function testMapsSuffixedPayloadKey(): void
+    {
+        $fixture = $this->makeProductFixture(7, false);
+        $fixture['unloc_prophecy']->addAttribute(Argument::that(
+            static fn ($v): bool => $v instanceof ProductAttributeValueInterface
+                && 'value' === $v->getValueKey()
+                && 42.0 === $v->getNumber()
+        ))->shouldBeCalledOnce()->willReturn($fixture['unloc_prophecy']->reveal());
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_value' => 42.0]]);
+    }
+
+    public function testIgnoresUnknownValueKey(): void
+    {
+        $fixture = $this->makeProductFixture(7, false);
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['7_bogus' => 42.0]]);
+
+        $fixture['unloc_prophecy']->addAttribute(Argument::cetera())->shouldNotHaveBeenCalled();
+        $this->addToAssertionCount(1);
+    }
+
+    public function testIgnoresNonStringKeys(): void
+    {
+        $fixture = $this->makeProductFixture(1, false);
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [1 => 5.0]]);
+
+        $fixture['unloc_prophecy']->addAttribute(Argument::cetera())->shouldNotHaveBeenCalled();
+        $this->addToAssertionCount(1);
+    }
+
+    public function testIgnoresMalformedStringKeys(): void
+    {
+        $fixture = $this->makeProductFixture(1, false);
+
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['not-an-attribute-key' => 5.0]]);
+
+        $fixture['unloc_prophecy']->addAttribute(Argument::cetera())->shouldNotHaveBeenCalled();
+        $this->addToAssertionCount(1);
     }
 
     public function testCreatesNewAttributeValue(): void
@@ -124,7 +166,7 @@ class ProductAttributesDataMapperTest extends TestCase
             static fn ($v): bool => $v instanceof ProductAttributeValueInterface && 7.5 === $v->getNumber()
         ))->shouldBeCalled()->willReturn($fixture['unloc_prophecy']->reveal());
 
-        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [1 => 7.5]]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['1_value' => 7.5]]);
     }
 
     public function testRemovesValueWhenNull(): void
@@ -161,7 +203,7 @@ class ProductAttributesDataMapperTest extends TestCase
         $loc = $this->prophesize(ProductDimensionContentInterface::class);
         $loc->getAttributes()->willReturn(new ArrayCollection());
 
-        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => [1 => null]]);
+        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => ['1_value' => null]]);
     }
 
     public function testIsEmptyForEmptyString(): void
@@ -197,7 +239,7 @@ class ProductAttributesDataMapperTest extends TestCase
         $loc = $this->prophesize(ProductDimensionContentInterface::class);
         $loc->getAttributes()->willReturn(new ArrayCollection());
 
-        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => [1 => '']]);
+        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => ['1_value' => '']]);
     }
 
     public function testRequiredMissingThrows(): void
@@ -208,7 +250,7 @@ class ProductAttributesDataMapperTest extends TestCase
         $this->expectException(RequiredProductAttributeMissingException::class);
         $this->expectExceptionMessage('attr-1');
 
-        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [1 => null]]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['1_value' => null]]);
     }
 
     public function testRequiredWithValuePasses(): void
@@ -218,7 +260,7 @@ class ProductAttributesDataMapperTest extends TestCase
             static fn ($v): bool => $v instanceof ProductAttributeValueInterface && 10.0 === $v->getNumber()
         ))->shouldBeCalled()->willReturn($fixture['unloc_prophecy']->reveal());
 
-        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [1 => 10.0]]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['1_value' => 10.0]]);
 
         $this->addToAssertionCount(1);
     }
@@ -296,7 +338,7 @@ class ProductAttributesDataMapperTest extends TestCase
         $loc = $this->prophesize(ProductDimensionContentInterface::class);
         $loc->getAttributes()->willReturn(new ArrayCollection());
 
-        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => [1 => 99.0]]);
+        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => ['1_value' => 99.0]]);
 
         $this->assertSame(99.0, $existingValue->getNumber());
     }
@@ -309,7 +351,7 @@ class ProductAttributesDataMapperTest extends TestCase
             static fn ($v): bool => $v instanceof ProductAttributeValueInterface && 7.5 === $v->getNumber()
         ))->shouldBeCalledOnce()->willReturn($fixture['loc_prophecy']->reveal());
 
-        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [1 => 7.5]]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['1_value' => 7.5]]);
 
         $fixture['unloc_prophecy']->addAttribute(Argument::cetera())->shouldNotHaveBeenCalled();
     }
@@ -348,7 +390,7 @@ class ProductAttributesDataMapperTest extends TestCase
         $loc->getAttributes()->willReturn(new ArrayCollection([$existingValue]));
         $loc->removeAttribute($existingValue)->shouldBeCalled()->willReturn($loc->reveal());
 
-        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => [1 => null]]);
+        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => ['1_value' => null]]);
     }
 
     public function testVariantSkipsRequiredNonVariantAttribute(): void
@@ -356,7 +398,7 @@ class ProductAttributesDataMapperTest extends TestCase
         $fixture = $this->makeProductFixture(1, required: true, isVariantAttribute: false, isVariantResource: true);
         $fixture['unloc_prophecy']->addAttribute(Argument::cetera())->shouldNotBeCalled();
 
-        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [1 => null]]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['1_value' => null]]);
 
         $this->addToAssertionCount(1);
     }
@@ -369,7 +411,7 @@ class ProductAttributesDataMapperTest extends TestCase
         $this->expectException(RequiredProductAttributeMissingException::class);
         $this->expectExceptionMessage('attr-1');
 
-        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [1 => null]]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['1_value' => null]]);
     }
 
     public function testNonVariantProductStillEnforcesRequiredNonVariantAttribute(): void
@@ -380,7 +422,7 @@ class ProductAttributesDataMapperTest extends TestCase
         $this->expectException(RequiredProductAttributeMissingException::class);
         $this->expectExceptionMessage('attr-1');
 
-        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => [1 => null]]);
+        $this->mapper->map($fixture['unloc'], $fixture['loc'], ['attributes' => ['1_value' => null]]);
     }
 
     private function prophesizeNonVariantResource(): ProductInterface

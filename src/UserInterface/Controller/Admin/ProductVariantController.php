@@ -268,7 +268,7 @@ final class ProductVariantController implements SecuredControllerInterface
         );
 
         if (isset($data['attributes']) && \is_array($data['attributes'])) {
-            /** @var array<int, mixed> $attributes */
+            /** @var array<string, mixed> $attributes */
             $attributes = $data['attributes'];
             $data['attributes'] = $this->stripInheritedAttributes($family, $attributes);
         }
@@ -294,15 +294,26 @@ final class ProductVariantController implements SecuredControllerInterface
      * Only per-variant axis values may be persisted on the variant's own dimension content;
      * shared/inherited attribute values are stripped even if a client submits them directly.
      *
-     * @param array<int, mixed> $attributes
+     * @param array<string, mixed> $attributes
      *
-     * @return array<int, mixed>
+     * @return array<string, mixed>
      */
     private function stripInheritedAttributes(ProductFamilyInterface $family, array $attributes): array
     {
+        $inheritedIds = [];
         foreach ($family->getFamilyAttributes() as $familyAttribute) {
             if (!$familyAttribute->isVariantSpecific()) {
-                unset($attributes[$familyAttribute->getAttribute()->getId()]);
+                $inheritedIds[] = $familyAttribute->getAttribute()->getId();
+            }
+        }
+
+        foreach (\array_keys($attributes) as $key) {
+            if (1 !== \preg_match('/^(\d+)_/', (string) $key, $m)) {
+                continue;
+            }
+
+            if (\in_array((int) $m[1], $inheritedIds, true)) {
+                unset($attributes[$key]);
             }
         }
 

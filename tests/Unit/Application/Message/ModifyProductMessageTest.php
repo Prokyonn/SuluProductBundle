@@ -66,9 +66,9 @@ class ModifyProductMessageTest extends TestCase
 
     public function testGetAttributes(): void
     {
-        $message = new ModifyProductMessage(['uuid' => 'uuid-1'], ['locale' => 'en', 'productFamily' => 'fam-1', 'attributes' => [7 => 42.0]]);
+        $message = new ModifyProductMessage(['uuid' => 'uuid-1'], ['locale' => 'en', 'productFamily' => 'fam-1', 'attributes' => ['7_value' => 42.0]]);
 
-        $this->assertSame([7 => 42.0], $message->getAttributes());
+        $this->assertSame(['7_value' => 42.0], $message->getAttributes());
     }
 
     public function testGetAttributesDefaultsToEmpty(): void

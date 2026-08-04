@@ -360,7 +360,7 @@ class ProductControllerTest extends SuluTestCase
             [],
             \json_encode([
                 'locale' => 'en',
-                'attributes' => [$attributeId => null],
+                'attributes' => [$attributeId . '_value' => null],
             ]) ?: null,
         );
 
@@ -388,7 +388,7 @@ class ProductControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'title' => 'My Product',
                 'productFamily' => $familyId,
-                'attributes' => [$attributeId => null],
+                'attributes' => [$attributeId . '_value' => null],
             ]) ?: null,
         );
 
@@ -416,7 +416,7 @@ class ProductControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'title' => 'My Product',
                 'productFamily' => $familyId,
-                'attributes' => [$attributeId => 'not-a-number'],
+                'attributes' => [$attributeId . '_value' => 'not-a-number'],
             ]) ?: null,
         );
 
@@ -439,11 +439,16 @@ class ProductControllerTest extends SuluTestCase
     }
 
     /**
-     * @param array<int, mixed> $attributes
+     * @param array<int, mixed> $attributes keyed by bare attribute id; suffixed with "_value" on the wire
      */
     private function putAttributes(string $id, string $locale, array $attributes, ?string $title = null): void
     {
-        $payload = ['locale' => $locale, 'attributes' => $attributes];
+        $suffixedAttributes = [];
+        foreach ($attributes as $attributeId => $value) {
+            $suffixedAttributes[$attributeId . '_value'] = $value;
+        }
+
+        $payload = ['locale' => $locale, 'attributes' => $suffixedAttributes];
         if (null !== $title) {
             $payload['title'] = $title;
         }
@@ -469,7 +474,7 @@ class ProductControllerTest extends SuluTestCase
         $this->assertIsArray($data);
         $this->assertIsArray($data['attributes']);
 
-        return $data['attributes'][$attributeId] ?? null;
+        return $data['attributes'][$attributeId . '_value'] ?? null;
     }
 
     public function testDelete(): void
@@ -729,7 +734,7 @@ class ProductControllerTest extends SuluTestCase
             [],
             \json_encode([
                 'locale' => 'en',
-                'attributes' => [$attributeId => 12345],
+                'attributes' => [$attributeId . '_value' => 12345],
             ]) ?: null,
         );
 

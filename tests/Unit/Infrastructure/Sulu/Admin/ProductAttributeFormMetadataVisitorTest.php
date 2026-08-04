@@ -178,8 +178,8 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         self::assertInstanceOf(SectionMetadata::class, $section);
         self::assertSame('Dimensions', $section->getLabel('en'));
         $sectionItems = $section->getItems();
-        self::assertArrayHasKey('attributes/7', $sectionItems);
-        $field = $sectionItems['attributes/7'];
+        self::assertArrayHasKey('attributes/7_value', $sectionItems);
+        $field = $sectionItems['attributes/7_value'];
         self::assertInstanceOf(FieldMetadata::class, $field);
         self::assertSame('number', $field->getType());
         self::assertSame('Weight', $field->getLabel('en'));
@@ -322,9 +322,9 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
                         'attributes' => [
                             'type' => 'object',
                             'properties' => [
-                                7 => ['type' => 'number', 'minimum' => 0.0, 'maximum' => 10.0],
+                                '7_value' => ['type' => 'number', 'minimum' => 0.0, 'maximum' => 10.0],
                             ],
-                            'required' => ['7'],
+                            'required' => ['7_value'],
                         ],
                     ],
                 ],
@@ -364,7 +364,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
 
         $section = $form->getItems()['attribute_group_1'];
         self::assertInstanceOf(SectionMetadata::class, $section);
-        $field = $section->getItems()['attributes/7'];
+        $field = $section->getItems()['attributes/7_value'];
         self::assertInstanceOf(FieldMetadata::class, $field);
         self::assertNull($field->getDescription('en'));
     }
@@ -458,7 +458,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
 
         $section = $form->getItems()['attribute_group_1'];
         self::assertInstanceOf(SectionMetadata::class, $section);
-        $injected = $section->getItems()['attributes/7'];
+        $injected = $section->getItems()['attributes/7_value'];
         self::assertInstanceOf(FieldMetadata::class, $injected);
         self::assertArrayHasKey('opt', $injected->getOptions());
         self::assertCount(1, $injected->getTypes());
@@ -527,7 +527,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         self::assertInstanceOf(SectionMetadata::class, $section);
         $sectionItems = $section->getItems();
 
-        $valueField = $sectionItems['attributes/7'];
+        $valueField = $sectionItems['attributes/7_value'];
         self::assertInstanceOf(FieldMetadata::class, $valueField);
         self::assertSame(8, $valueField->getColSpan());
 
@@ -594,9 +594,9 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $section = $form->getItems()['attribute_group_1'];
         self::assertInstanceOf(SectionMetadata::class, $section);
         $sectionItems = $section->getItems();
-        self::assertArrayHasKey('attributes/7', $sectionItems);
+        self::assertArrayHasKey('attributes/7_value', $sectionItems);
         self::assertArrayNotHasKey('attributes/7_unit', $sectionItems);
-        self::assertSame(12, $sectionItems['attributes/7']->getColSpan());
+        self::assertSame(12, $sectionItems['attributes/7_value']->getColSpan());
     }
 
     public function testInjectsNothingWhenNoFamilyFound(): void
@@ -645,7 +645,7 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
 
         $section = $form->getItems()['attribute_group_1'];
         self::assertInstanceOf(SectionMetadata::class, $section);
-        $field = $section->getItems()['attributes/7'];
+        $field = $section->getItems()['attributes/7_value'];
         self::assertInstanceOf(FieldMetadata::class, $field);
         self::assertSame('Gewicht', $field->getLabel('en'));
     }
@@ -694,8 +694,8 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
         $section = $form->getItems()['attribute_group_1'];
         self::assertInstanceOf(SectionMetadata::class, $section);
         $sectionItems = $section->getItems();
-        self::assertArrayHasKey('attributes/7', $sectionItems);
-        self::assertArrayNotHasKey('attributes/8', $sectionItems);
+        self::assertArrayHasKey('attributes/7_value', $sectionItems);
+        self::assertArrayNotHasKey('attributes/8_value', $sectionItems);
     }
 
     public function testGroupsAttributesIntoSeparateSectionsPerGroup(): void
@@ -753,11 +753,11 @@ class ProductAttributeFormMetadataVisitorTest extends TestCase
 
         $sectionOne = $items['attribute_group_1'];
         self::assertInstanceOf(SectionMetadata::class, $sectionOne);
-        self::assertArrayHasKey('attributes/7', $sectionOne->getItems());
-        self::assertArrayNotHasKey('attributes/8', $sectionOne->getItems());
+        self::assertArrayHasKey('attributes/7_value', $sectionOne->getItems());
+        self::assertArrayNotHasKey('attributes/8_value', $sectionOne->getItems());
 
         $sectionTwo = $items['attribute_group_2'];
         self::assertInstanceOf(SectionMetadata::class, $sectionTwo);
-        self::assertArrayHasKey('attributes/8', $sectionTwo->getItems());
+        self::assertArrayHasKey('attributes/8_value', $sectionTwo->getItems());
     }
 }

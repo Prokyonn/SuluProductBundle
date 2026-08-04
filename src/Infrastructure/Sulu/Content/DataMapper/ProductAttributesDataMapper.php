@@ -61,55 +61,75 @@ class ProductAttributesDataMapper implements DataMapperInterface
             $familyAttributes[$familyAttribute->getAttribute()->getId()] = $familyAttribute;
         }
 
-        /** @var array<int, ProductAttributeValueInterface> $allExisting */
+        /** @var array<int, array<string, ProductAttributeValueInterface>> $allExisting */
         $allExisting = [];
         foreach ($unlocalizedDimensionContent->getAttributes() as $value) {
-            $allExisting[$value->getAttribute()->getId()] = $value;
+            $allExisting[$value->getAttribute()->getId()][$value->getValueKey()] = $value;
         }
         foreach ($localizedDimensionContent->getAttributes() as $value) {
-            $allExisting[$value->getAttribute()->getId()] = $value;
+            $allExisting[$value->getAttribute()->getId()][$value->getValueKey()] = $value;
         }
 
-        foreach ($submitted as $attributeId => $raw) {
-            if (!\is_int($attributeId) && !\ctype_digit((string) $attributeId)) {
+        /** @var array<int, array<string, mixed>> $grouped */
+        $grouped = [];
+        foreach ($submitted as $key => $raw) {
+            if (!\is_string($key) || 1 !== \preg_match('/^(\d+)_([a-zA-Z0-9]+)$/', $key, $m)) {
                 continue;
             }
 
-            $attributeId = (int) $attributeId;
+            $attributeId = (int) $m[1];
             $familyAttribute = $familyAttributes[$attributeId] ?? null;
-
             if (null === $familyAttribute) {
                 continue;
             }
 
+            $type = $this->attributeTypeRegistry->get($familyAttribute->getAttribute()->getType());
+            if (!\in_array($m[2], $type->getValueKeys(), true)) {
+                continue;   // drops the _unit sidecar and any unknown key
+            }
+
+            $grouped[$attributeId][$m[2]] = $raw;
+        }
+
+        foreach ($grouped as $attributeId => $rawByKey) {
+            $familyAttribute = $familyAttributes[$attributeId];
             $attribute = $familyAttribute->getAttribute();
             $targetDimensionContent = $attribute->isLocalized()
                 ? $localizedDimensionContent
                 : $unlocalizedDimensionContent;
             $type = $this->attributeTypeRegistry->get($attribute->getType());
-            $existing = $allExisting[$attributeId] ?? null;
+            $existingRows = $allExisting[$attributeId] ?? [];
 
-            if ($this->isEmpty($raw)) {
-                if (null !== $existing) {
-                    $targetDimensionContent->removeAttribute($existing);
-                    unset($allExisting[$attributeId]);
+            if ($this->isEmptyGroup($rawByKey)) {
+                foreach ($existingRows as $existingRow) {
+                    $targetDimensionContent->removeAttribute($existingRow);
                 }
+                unset($allExisting[$attributeId]);
 
                 continue;
             }
 
-            $isNew = null === $existing;
-            if (null === $existing) {
-                $existing = new ProductAttributeValue($targetDimensionContent, $attribute, $attribute->getKey());
-                $existing->setProductFamilyAttribute($familyAttribute);
+            /** @var array<string, ProductAttributeValueInterface> $rowsByKey */
+            $rowsByKey = [];
+            $newRows = [];
+            foreach ($type->getValueKeys() as $valueKey) {
+                $row = $existingRows[$valueKey] ?? null;
+                if (null === $row) {
+                    $row = new ProductAttributeValue($targetDimensionContent, $attribute, $attribute->getKey(), $valueKey);
+                    $row->setProductFamilyAttribute($familyAttribute);
+                    $newRows[] = $row;
+                }
+
+                $rowsByKey[$valueKey] = $row;
             }
 
-            $type->writeValue(['value' => $existing], ['value' => $raw]);
+            $type->writeValue($rowsByKey, $rawByKey);
 
-            if ($isNew) {
-                $targetDimensionContent->addAttribute($existing);
-                $allExisting[$attributeId] = $existing;
+            foreach ($newRows as $newRow) {
+                $targetDimensionContent->addAttribute($newRow);
             }
+
+            $allExisting[$attributeId] = $rowsByKey;
         }
 
         $isVariant = $unlocalizedDimensionContent->getResource()->isType(ProductInterface::TYPE_VARIANT);
@@ -119,11 +139,11 @@ class ProductAttributesDataMapper implements DataMapperInterface
 
     /**
      * @param array<int, ProductFamilyAttributeInterface> $familyAttributes
-     * @param array<int, ProductAttributeValueInterface> $values
+     * @param array<int, array<string, ProductAttributeValueInterface>> $existingByAttributeId
      *
      * @throws RequiredProductAttributeMissingException
      */
-    private function assertRequiredSatisfied(array $familyAttributes, array $values, bool $isVariant): void
+    private function assertRequiredSatisfied(array $familyAttributes, array $existingByAttributeId, bool $isVariant): void
     {
         foreach ($familyAttributes as $attributeId => $familyAttribute) {
             if (!$familyAttribute->isRequired()) {
@@ -135,17 +155,34 @@ class ProductAttributesDataMapper implements DataMapperInterface
                 continue;
             }
 
-            $value = $values[$attributeId] ?? null;
-            if (null === $value) {
+            $rows = $existingByAttributeId[$attributeId] ?? null;
+            if (null === $rows) {
                 throw new RequiredProductAttributeMissingException($familyAttribute->getAttribute()->getKey());
             }
 
             $type = $this->attributeTypeRegistry->get($familyAttribute->getAttribute()->getType());
-            $read = $type->readValue(['value' => $value]);
-            if ($this->isEmpty($read['value'] ?? null)) {
-                throw new RequiredProductAttributeMissingException($familyAttribute->getAttribute()->getKey());
+            $read = $type->readValue($rows);
+
+            foreach ($type->getValueKeys() as $valueKey) {
+                if ($this->isEmpty($read[$valueKey] ?? null)) {
+                    throw new RequiredProductAttributeMissingException($familyAttribute->getAttribute()->getKey());
+                }
             }
         }
+    }
+
+    /**
+     * @param array<string, mixed> $rawByKey
+     */
+    private function isEmptyGroup(array $rawByKey): bool
+    {
+        foreach ($rawByKey as $raw) {
+            if (!$this->isEmpty($raw)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function isEmpty(mixed $raw): bool

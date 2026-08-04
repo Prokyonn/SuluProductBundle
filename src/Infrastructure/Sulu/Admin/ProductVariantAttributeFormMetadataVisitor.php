@@ -75,7 +75,7 @@ class ProductVariantAttributeFormMetadataVisitor implements FormMetadataVisitorI
             if (null === $result) {
                 continue;
             }
-            [$field, $unitField] = $result;
+            [$fields, $unitField] = $result;
 
             $group = $familyAttribute->getAttribute()->getGroup();
             $groupId = $group->getId();
@@ -85,15 +85,17 @@ class ProductVariantAttributeFormMetadataVisitor implements FormMetadataVisitorI
             }
             $section = $sections[$groupId];
 
-            $section->addItem($field);
+            foreach ($fields as $field) {
+                $section->addItem($field);
+
+                $schemaProperties[] = $this->propertyMetadataMapperRegistry->has($field->getType())
+                    ? $this->propertyMetadataMapperRegistry->get($field->getType())->mapPropertyMetadata($field)
+                    : new PropertyMetadata($field->getName(), $field->isRequired());
+            }
 
             if (null !== $unitField) {
                 $section->addItem($unitField);
             }
-
-            $schemaProperties[] = $this->propertyMetadataMapperRegistry->has($field->getType())
-                ? $this->propertyMetadataMapperRegistry->get($field->getType())->mapPropertyMetadata($field)
-                : new PropertyMetadata($field->getName(), $field->isRequired());
         }
 
         if ([] !== $sections) {

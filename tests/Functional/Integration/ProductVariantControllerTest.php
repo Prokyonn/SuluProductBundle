@@ -169,9 +169,11 @@ class ProductVariantControllerTest extends SuluTestCase
     }
 
     /**
-     * @return int[]
+     * @return list<string> "{attributeId}_{valueKey}" composite keys — a multi-part attribute
+     *                      persists several rows sharing the same attribute id, so the id alone
+     *                      cannot serve as a stable per-row identifier
      */
-    private function getPersistedAttributeIds(string $productId): array
+    private function getPersistedAttributeValueKeys(string $productId): array
     {
         $container = self::getContainer();
         /** @var ProductRepositoryInterface $productRepository */
@@ -195,12 +197,12 @@ class ProductVariantControllerTest extends SuluTestCase
 
         $dimensionContent = $contentManager->resolve($product, $dimensionAttributes);
 
-        $ids = [];
+        $byKey = [];
         foreach ($dimensionContent->getAttributes() as $attributeValue) {
-            $ids[] = $attributeValue->getAttribute()->getId();
+            $byKey[$attributeValue->getAttribute()->getId() . '_' . $attributeValue->getValueKey()] = $attributeValue;
         }
 
-        return $ids;
+        return \array_keys($byKey);
     }
 
     public function testPostCreatesVariantUnderParentAndIsExcludedFromMainList(): void
@@ -221,7 +223,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => 'L'],
+                'attributes' => [$axisId . '_value' => 'L'],
             ]) ?: null,
         );
 
@@ -369,6 +371,78 @@ class ProductVariantControllerTest extends SuluTestCase
         $this->assertHttpStatusCode(200, $this->client->getResponse());
     }
 
+    /**
+     * Regression test for the suffixed-key variant filter: {@see ProductVariantController::stripInheritedAttributes()}
+     * parses the "{attributeId}_{valueKey}" payload key to find the inherited attribute id, rather than
+     * looking up the (now string) key by the bare integer id.
+     */
+    public function testPostStripsInheritedAttributeWithSuffixedKey(): void
+    {
+        self::purgeDatabase();
+
+        $sharedId = $this->createAttribute('color', 'Color');
+        $familyId = $this->createProductFamily([
+            $sharedId => ['enabled' => true, 'variantSpecific' => false],
+        ]);
+        $parentId = $this->createProduct($familyId, 'Parent Product', ProductInterface::TYPE_PRODUCT_WITH_VARIANTS);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products/' . $parentId . '/variants.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-RD',
+                'title' => 'Variant',
+                'attributes' => [$sharedId . '_value' => 'x'],
+            ]) ?: null,
+        );
+
+        $response = $this->client->getResponse();
+        $this->assertHttpStatusCode(201, $response);
+
+        $data = \json_decode((string) $response->getContent(), true);
+        $this->assertIsArray($data);
+        $childId = $data['id'];
+        $this->assertIsString($childId);
+
+        $this->assertSame([], $this->getPersistedAttributeValueKeys($childId));
+    }
+
+    /**
+     * A key that does not match the "{attributeId}_{valueKey}" shape (e.g. a stray client field)
+     * must be left alone by {@see ProductVariantController::stripInheritedAttributes()} rather
+     * than being mistaken for an inherited attribute id.
+     */
+    public function testPostToleratesNonNumericAttributeKeyInVariantFilter(): void
+    {
+        self::purgeDatabase();
+
+        $sharedId = $this->createAttribute('color', 'Color');
+        $familyId = $this->createProductFamily([
+            $sharedId => ['enabled' => true, 'variantSpecific' => false],
+        ]);
+        $parentId = $this->createProduct($familyId, 'Parent Product', ProductInterface::TYPE_PRODUCT_WITH_VARIANTS);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products/' . $parentId . '/variants.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-RD',
+                'title' => 'Variant',
+                'attributes' => ['not-a-valid-key' => 'x', $sharedId . '_value' => 'y'],
+            ]) ?: null,
+        );
+
+        $this->assertHttpStatusCode(201, $this->client->getResponse());
+    }
+
     public function testInheritedAttributesAreStrippedOnWriteAndNeverReturnedOnVariantRead(): void
     {
         self::purgeDatabase();
@@ -391,7 +465,7 @@ class ProductVariantControllerTest extends SuluTestCase
             \json_encode([
                 'locale' => 'en',
                 'title' => 'Parent Product',
-                'attributes' => [$sharedId => 'Red'],
+                'attributes' => [$sharedId . '_value' => 'Red'],
             ]) ?: null,
         );
         $this->assertHttpStatusCode(200, $this->client->getResponse());
@@ -408,7 +482,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => 'L', $sharedId => 'Green'],
+                'attributes' => [$axisId . '_value' => 'L', $sharedId . '_value' => 'Green'],
             ]) ?: null,
         );
         $this->assertHttpStatusCode(201, $this->client->getResponse());
@@ -418,20 +492,20 @@ class ProductVariantControllerTest extends SuluTestCase
         $this->assertIsString($childId);
 
         // The inherited attribute submitted on create must not be persisted on the variant.
-        $this->assertSame([$axisId], $this->getPersistedAttributeIds($childId));
+        $this->assertSame([$axisId . '_value'], $this->getPersistedAttributeValueKeys($childId));
 
         // The shared attribute is never merged in from the parent for display.
         $this->assertIsArray($created['attributes']);
-        $this->assertSame('L', $created['attributes'][$axisId]);
-        $this->assertNull($created['attributes'][$sharedId]);
+        $this->assertSame('L', $created['attributes'][$axisId . '_value']);
+        $this->assertNull($created['attributes'][$sharedId . '_value']);
 
         $this->client->request('GET', '/admin/api/products/' . $parentId . '/variants/' . $childId . '.json?locale=en');
         $this->assertHttpStatusCode(200, $this->client->getResponse());
         $fetched = \json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertIsArray($fetched);
         $this->assertIsArray($fetched['attributes']);
-        $this->assertSame('L', $fetched['attributes'][$axisId]);
-        $this->assertNull($fetched['attributes'][$sharedId]);
+        $this->assertSame('L', $fetched['attributes'][$axisId . '_value']);
+        $this->assertNull($fetched['attributes'][$sharedId . '_value']);
 
         // PUT attempting to submit the shared attribute must also be stripped.
         $this->client->request(
@@ -444,18 +518,18 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => 'XL', $sharedId => 'Blue'],
+                'attributes' => [$axisId . '_value' => 'XL', $sharedId . '_value' => 'Blue'],
             ]) ?: null,
         );
         $this->assertHttpStatusCode(200, $this->client->getResponse());
         $updated = \json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertIsArray($updated);
 
-        $this->assertSame([$axisId], $this->getPersistedAttributeIds($childId));
+        $this->assertSame([$axisId . '_value'], $this->getPersistedAttributeValueKeys($childId));
 
         $this->assertIsArray($updated['attributes']);
-        $this->assertSame('XL', $updated['attributes'][$axisId]);
-        $this->assertNull($updated['attributes'][$sharedId]);
+        $this->assertSame('XL', $updated['attributes'][$axisId . '_value']);
+        $this->assertNull($updated['attributes'][$sharedId . '_value']);
 
         // The parent's own value is untouched by anything submitted on the variant.
         $this->client->request('GET', '/admin/api/products/' . $parentId . '.json?locale=en');
@@ -463,7 +537,7 @@ class ProductVariantControllerTest extends SuluTestCase
         $parentFetched = \json_decode((string) $this->client->getResponse()->getContent(), true);
         $this->assertIsArray($parentFetched);
         $this->assertIsArray($parentFetched['attributes']);
-        $this->assertSame('Red', $parentFetched['attributes'][$sharedId]);
+        $this->assertSame('Red', $parentFetched['attributes'][$sharedId . '_value']);
     }
 
     public function testCgetListsVariantsOfParent(): void
@@ -760,7 +834,7 @@ class ProductVariantControllerTest extends SuluTestCase
             \json_encode([
                 'locale' => 'en',
                 'title' => 'Parent Product',
-                'attributes' => [$sharedId => 'Red'],
+                'attributes' => [$sharedId . '_value' => 'Red'],
             ]) ?: null,
         );
         $this->assertHttpStatusCode(200, $this->client->getResponse());
@@ -778,7 +852,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => 'L'],
+                'attributes' => [$axisId . '_value' => 'L'],
             ]) ?: null,
         );
         $this->assertHttpStatusCode(201, $this->client->getResponse());
@@ -799,7 +873,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => 'XL'],
+                'attributes' => [$axisId . '_value' => 'XL'],
             ]) ?: null,
         );
         $this->assertHttpStatusCode(200, $this->client->getResponse());
@@ -827,7 +901,7 @@ class ProductVariantControllerTest extends SuluTestCase
             \json_encode([
                 'locale' => 'en',
                 'title' => 'Simple Product',
-                'attributes' => [$sharedId => null],
+                'attributes' => [$sharedId . '_value' => null],
             ]) ?: null,
         );
         $this->assertHttpStatusCode(422, $this->client->getResponse());
@@ -1105,7 +1179,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => 'L'],
+                'attributes' => [$axisId . '_value' => 'L'],
             ]) ?: null,
         );
         $this->assertHttpStatusCode(201, $this->client->getResponse());
@@ -1125,7 +1199,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => null],
+                'attributes' => [$axisId . '_value' => null],
             ]) ?: null,
         );
         $response = $this->client->getResponse();
@@ -1153,7 +1227,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => null],
+                'attributes' => [$axisId . '_value' => null],
             ]) ?: null,
         );
 
@@ -1182,7 +1256,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => 'not-a-number'],
+                'attributes' => [$axisId . '_value' => 'not-a-number'],
             ]) ?: null,
         );
 
@@ -1212,7 +1286,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => '10'],
+                'attributes' => [$axisId . '_value' => '10'],
             ]) ?: null,
         );
         $this->assertHttpStatusCode(201, $this->client->getResponse());
@@ -1231,7 +1305,7 @@ class ProductVariantControllerTest extends SuluTestCase
                 'locale' => 'en',
                 'code' => 'CX3-RD-L',
                 'title' => 'Variant L',
-                'attributes' => [$axisId => 'not-a-number'],
+                'attributes' => [$axisId . '_value' => 'not-a-number'],
             ]) ?: null,
         );
         $response = $this->client->getResponse();

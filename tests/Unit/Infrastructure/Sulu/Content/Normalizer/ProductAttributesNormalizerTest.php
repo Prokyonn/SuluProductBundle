@@ -91,6 +91,7 @@ class ProductAttributesNormalizerTest extends TestCase
         $attribute = $this->prophesize(AttributeInterface::class);
         $attribute->getId()->willReturn(42);
         $attribute->getConfig()->willReturn([]);
+        $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
 
         /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttribute */
         $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
@@ -109,8 +110,8 @@ class ProductAttributesNormalizerTest extends TestCase
 
         $attributes = $result['attributes'];
         $this->assertIsArray($attributes);
-        $this->assertArrayHasKey(42, $attributes);
-        $this->assertNull($attributes[42]);
+        $this->assertArrayHasKey('42_value', $attributes);
+        $this->assertNull($attributes['42_value']);
     }
 
     public function testEnhancePrePopulatesUnitKeyForMeasurementFamilyAttribute(): void
@@ -119,6 +120,7 @@ class ProductAttributesNormalizerTest extends TestCase
         $attribute = $this->prophesize(AttributeInterface::class);
         $attribute->getId()->willReturn(42);
         $attribute->getConfig()->willReturn(['measurementFamily' => 'length', 'unit' => 'meter']);
+        $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
 
         /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttribute */
         $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
@@ -164,6 +166,6 @@ class ProductAttributesNormalizerTest extends TestCase
 
         $attributes = $result['attributes'];
         $this->assertIsArray($attributes);
-        $this->assertSame(3.14, $attributes[7]);
+        $this->assertSame(3.14, $attributes['7_value']);
     }
 }

@@ -197,12 +197,12 @@ class ProductVariantAttributeFormMetadataVisitorTest extends TestCase
         self::assertSame('Color', $section->getLabel('en'));
         $sectionItems = $section->getItems();
 
-        self::assertArrayHasKey('attributes/7', $sectionItems);
-        $variantField = $sectionItems['attributes/7'];
+        self::assertArrayHasKey('attributes/7_value', $sectionItems);
+        $variantField = $sectionItems['attributes/7_value'];
         self::assertInstanceOf(FieldMetadata::class, $variantField);
         self::assertNotSame('true', $variantField->getDisabledCondition());
 
-        self::assertArrayNotHasKey('attributes/8', $sectionItems);
+        self::assertArrayNotHasKey('attributes/8_value', $sectionItems);
 
         self::assertFalse($form->isCacheable());
     }
@@ -334,7 +334,7 @@ class ProductVariantAttributeFormMetadataVisitorTest extends TestCase
         self::assertInstanceOf(SectionMetadata::class, $section);
         $sectionItems = $section->getItems();
 
-        self::assertArrayHasKey('attributes/11', $sectionItems);
+        self::assertArrayHasKey('attributes/11_value', $sectionItems);
         self::assertArrayHasKey('attributes/11_unit', $sectionItems);
     }
 
@@ -382,7 +382,7 @@ class ProductVariantAttributeFormMetadataVisitorTest extends TestCase
         self::assertArrayHasKey('attribute_group_1', $items);
         $section = $items['attribute_group_1'];
         self::assertInstanceOf(SectionMetadata::class, $section);
-        self::assertArrayHasKey('attributes/13', $section->getItems());
+        self::assertArrayHasKey('attributes/13_value', $section->getItems());
         self::assertFalse($form->isCacheable());
     }
 
@@ -443,10 +443,10 @@ class ProductVariantAttributeFormMetadataVisitorTest extends TestCase
 
         $sectionOne = $items['attribute_group_1'];
         self::assertInstanceOf(SectionMetadata::class, $sectionOne);
-        self::assertArrayHasKey('attributes/7', $sectionOne->getItems());
+        self::assertArrayHasKey('attributes/7_value', $sectionOne->getItems());
 
         $sectionTwo = $items['attribute_group_2'];
         self::assertInstanceOf(SectionMetadata::class, $sectionTwo);
-        self::assertArrayHasKey('attributes/8', $sectionTwo->getItems());
+        self::assertArrayHasKey('attributes/8_value', $sectionTwo->getItems());
     }
 }

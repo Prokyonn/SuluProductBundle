@@ -15,6 +15,8 @@ namespace Sulu\Product\Infrastructure\Sulu\Content\Normalizer;
 
 use Sulu\Content\Application\ContentNormalizer\Normalizer\NormalizerInterface;
 use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
+use Sulu\Product\Domain\Model\AttributeInterface;
+use Sulu\Product\Domain\Model\ProductAttributeValueInterface;
 use Sulu\Product\Domain\Model\ProductDimensionContentInterface;
 
 class ProductAttributesNormalizer implements NormalizerInterface
@@ -53,7 +55,11 @@ class ProductAttributesNormalizer implements NormalizerInterface
         if (null !== $productFamily) {
             foreach ($productFamily->getFamilyAttributes() as $familyAttribute) {
                 $attribute = $familyAttribute->getAttribute();
-                $attributesMap[$attribute->getId()] = null;
+                $type = $this->attributeTypeRegistry->get($attribute->getType());
+
+                foreach ($type->getValueKeys() as $key) {
+                    $attributesMap[$attribute->getId() . '_' . $key] = null;
+                }
 
                 $config = $attribute->getConfig();
                 $measurementFamily = $config['measurementFamily'] ?? null;
@@ -64,10 +70,21 @@ class ProductAttributesNormalizer implements NormalizerInterface
             }
         }
 
+        /** @var array<int, array{attribute: AttributeInterface, rows: array<string, ProductAttributeValueInterface>}> $byAttributeId */
+        $byAttributeId = [];
         foreach ($object->getAttributes() as $attrValue) {
             $attribute = $attrValue->getAttribute();
-            $type = $this->attributeTypeRegistry->get($attribute->getType());
-            $attributesMap[$attribute->getId()] = $type->readValue(['value' => $attrValue])['value'] ?? null;
+            $attributeId = $attribute->getId();
+            $byAttributeId[$attributeId]['attribute'] = $attribute;
+            $byAttributeId[$attributeId]['rows'][$attrValue->getValueKey()] = $attrValue;
+        }
+
+        foreach ($byAttributeId as $attributeId => $group) {
+            $type = $this->attributeTypeRegistry->get($group['attribute']->getType());
+
+            foreach ($type->readValue($group['rows']) as $key => $value) {
+                $attributesMap[$attributeId . '_' . $key] = $value;
+            }
         }
 
         $normalizedData['attributes'] = $attributesMap;

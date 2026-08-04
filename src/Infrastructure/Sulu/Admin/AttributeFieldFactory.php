@@ -42,8 +42,9 @@ class AttributeFieldFactory
     }
 
     /**
-     * @return array{0: FieldMetadata, 1: ?FieldMetadata}|null a [field, unitField] tuple, or null when the
-     *                                                         attribute's type is unknown or has no form fragment
+     * @return array{0: list<FieldMetadata>, 1: ?FieldMetadata}|null a [fields, unitField] tuple, or null when the
+     *                                                               attribute's type is unknown or has no form
+     *                                                               fragment for one of its declared value keys
      */
     public function build(ProductFamilyAttributeInterface $familyAttribute, string $locale): ?array
     {
@@ -58,34 +59,77 @@ class AttributeFieldFactory
         }
 
         $type = $this->attributeTypeRegistry->get($attribute->getType());
+        $keys = $type->getValueKeys();
 
-        $template = $this->resolveTemplateField($type->getFormKey(), $locale);
+        /** @var array<string, FieldMetadata> $templates */
+        $templates = [];
+        foreach ($keys as $valueKey) {
+            $template = $this->resolveTemplateField($type->getFormKey(), $valueKey, $locale);
+            if (null === $template) {
+                return null;
+            }
 
-        if (null === $template) {
-            return null;
+            $templates[$valueKey] = $template;
         }
 
         $translation = $attribute->getTranslation($locale)
             ?? (($defaultLocale = $attribute->getDefaultLocale()) !== null ? $attribute->getTranslation($defaultLocale) : null);
 
-        $field = $this->cloneFieldWithName($template, 'attributes/' . $attribute->getId());
-        $field->setLabel($translation?->getName() ?? $attribute->getKey(), $locale);
-        $field->setRequired($familyAttribute->isRequired());
+        $fields = [];
+        foreach ($keys as $valueKey) {
+            $field = $this->cloneFieldWithName($templates[$valueKey], 'attributes/' . $attribute->getId() . '_' . $valueKey);
+            $field->setLabel($this->buildLabel($translation?->getName() ?? $attribute->getKey(), $keys, $valueKey, $locale), $locale);
+            $field->setRequired($familyAttribute->isRequired());
 
-        if ($hasUnit) {
-            $field->setColSpan(8);
+            $description = $translation?->getDescription();
+            if (null !== $description) {
+                $field->setDescription(\strip_tags($description), $locale);
+            }
+
+            $type->configureField($field, $attribute, $locale, $valueKey);
+
+            $fields[] = $field;
         }
-
-        $description = $translation?->getDescription();
-        if (null !== $description) {
-            $field->setDescription(\strip_tags($description), $locale);
-        }
-
-        $type->configureField($field, $attribute, $locale, 'value');
 
         $unitField = $hasUnit ? $this->buildUnitField($attribute->getId(), $unit, $locale) : null;
 
-        return [$field, $unitField];
+        $this->fitColSpans($fields, null !== $unitField);
+
+        return [$fields, $unitField];
+    }
+
+    /**
+     * @param list<string> $keys
+     */
+    private function buildLabel(string $name, array $keys, string $valueKey, string $locale): string
+    {
+        if (1 === \count($keys)) {
+            return $name;
+        }
+
+        $translationKey = 'sulu_product.value_key_' . $valueKey;
+        $part = $this->translator->trans($translationKey, [], 'admin', $locale);
+
+        return \sprintf('%s (%s)', $name, $part === $translationKey ? $valueKey : $part);
+    }
+
+    /**
+     * @param list<FieldMetadata> $fields
+     */
+    private function fitColSpans(array $fields, bool $hasUnit): void
+    {
+        $available = $hasUnit ? 8 : 12;
+
+        $sum = 0;
+        foreach ($fields as $field) {
+            $fitted = \max(2, (int) \floor($field->getColSpan() * $available / 12));
+            $field->setColSpan($fitted);
+            $sum += $fitted;
+        }
+
+        if ($sum < $available) {
+            $fields[0]->setColSpan($fields[0]->getColSpan() + ($available - $sum));
+        }
     }
 
     private function buildUnitField(int $attributeId, Unit $unit, string $locale): FieldMetadata
@@ -113,7 +157,7 @@ class AttributeFieldFactory
         return $field;
     }
 
-    private function resolveTemplateField(string $formKey, string $locale): ?FieldMetadata
+    private function resolveTemplateField(string $formKey, string $propertyName, string $locale): ?FieldMetadata
     {
         $fragment = $this->formMetadataLoader->getMetadata($formKey, $locale, []);
         if (!$fragment instanceof FormMetadata) {
@@ -121,7 +165,7 @@ class AttributeFieldFactory
         }
 
         foreach ($fragment->getItems() as $item) {
-            if ($item instanceof FieldMetadata && 'value' === $item->getName()) {
+            if ($item instanceof FieldMetadata && $propertyName === $item->getName()) {
                 return $item;
             }
         }
