@@ -19,6 +19,7 @@ use Sulu\Content\Application\ContentAggregator\ContentAggregatorInterface;
 use Sulu\Content\Application\ContentResolver\ContentResolverInterface;
 use Sulu\Content\Domain\Model\DimensionContentInterface;
 use Sulu\Content\Infrastructure\Doctrine\DimensionContentQueryEnhancer;
+use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
 use Sulu\Product\Domain\Measurement\MeasurementRegistry;
 use Sulu\Product\Domain\Model\AttributeInterface;
 use Sulu\Product\Domain\Model\ProductDimensionContentInterface;
@@ -36,6 +37,7 @@ class ProductTwigExtension extends AbstractExtension
         private ReferenceStoreInterface $referenceStore,
         private ContentResolverInterface $contentResolver,
         private MeasurementRegistry $measurementRegistry,
+        private AttributeTypeRegistry $attributeTypeRegistry,
     ) {
     }
 
@@ -116,7 +118,9 @@ class ProductTwigExtension extends AbstractExtension
                 AttributeInterface::TYPE_TEXT => $productAttributeValue->getText(),
                 AttributeInterface::TYPE_NUMBER => $productAttributeValue->getNumber(),
                 AttributeInterface::TYPE_DATE => $this->resolveDate($productAttributeValue->getNumber()),
-                default => $productAttributeValue->getValue(),
+                default => $this->attributeTypeRegistry->has($attribute->getType())
+                    ? ($this->attributeTypeRegistry->get($attribute->getType())->readValue(['value' => $productAttributeValue])['value'] ?? null)
+                    : null,
             };
 
             $formattedValue = match ($attribute->getType()) {

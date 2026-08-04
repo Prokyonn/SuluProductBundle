@@ -37,44 +37,44 @@ class NumberAttributeTypeTest extends TestCase
     public function testValueRoundTripUsesNumberColumn(): void
     {
         $type = new NumberAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
 
-        $type->writeValue($value, 42.5);
+        $type->writeValue(['value' => $row], ['value' => 42.5]);
 
-        self::assertSame(42.5, $value->getNumber());
-        self::assertSame(42.5, $type->readValue($value));
+        self::assertSame(42.5, $row->getNumber());
+        self::assertSame(['value' => 42.5], $type->readValue(['value' => $row]));
     }
 
     public function testWriteNullClearsNumber(): void
     {
         $type = new NumberAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
-        $type->writeValue($value, 1.0);
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $type->writeValue(['value' => $row], ['value' => 1.0]);
 
-        $type->writeValue($value, null);
+        $type->writeValue(['value' => $row], ['value' => null]);
 
-        self::assertNull($value->getNumber());
+        self::assertNull($row->getNumber());
     }
 
     public function testWriteCoercesNumericStringFromForm(): void
     {
         $type = new NumberAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
 
-        $type->writeValue($value, '42.5');
+        $type->writeValue(['value' => $row], ['value' => '42.5']);
 
-        self::assertSame(42.5, $value->getNumber());
+        self::assertSame(42.5, $row->getNumber());
     }
 
     public function testWriteEmptyStringClearsNumber(): void
     {
         $type = new NumberAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
-        $type->writeValue($value, 1.0);
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $type->writeValue(['value' => $row], ['value' => 1.0]);
 
-        $type->writeValue($value, '');
+        $type->writeValue(['value' => $row], ['value' => '']);
 
-        self::assertNull($value->getNumber());
+        self::assertNull($row->getNumber());
     }
 
     public function testConfigureFieldAddsMinMaxStepFromConfig(): void
@@ -84,7 +84,7 @@ class NumberAttributeTypeTest extends TestCase
         $attribute->setConfig(['min' => 0, 'max' => 100, 'step' => 0.5]);
 
         $field = new FieldMetadata('attributes/1');
-        $type->configureField($field, $attribute, 'en');
+        $type->configureField($field, $attribute, 'en', 'value');
 
         $options = $field->getOptions();
         self::assertArrayHasKey('min', $options);
@@ -102,7 +102,7 @@ class NumberAttributeTypeTest extends TestCase
         $attribute->setConfig(['min' => 0]);
 
         $field = new FieldMetadata('attributes/1');
-        $type->configureField($field, $attribute, 'en');
+        $type->configureField($field, $attribute, 'en', 'value');
 
         $options = $field->getOptions();
         self::assertArrayHasKey('min', $options);

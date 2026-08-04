@@ -43,26 +43,26 @@ class OptionsAttributeTypeTest extends TestCase
     public function testValueRoundTripUsesOptionKeyColumn(): void
     {
         $type = new OptionsAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
 
-        $type->writeValue($value, 'red');
+        $type->writeValue(['value' => $row], ['value' => 'red']);
 
-        self::assertSame('red', $value->getAttributeOptionKey());
-        self::assertSame('red', $type->readValue($value));
+        self::assertSame('red', $row->getAttributeOptionKey());
+        self::assertSame(['value' => 'red'], $type->readValue(['value' => $row]));
     }
 
     public function testWriteEmptyValueClearsOptionKey(): void
     {
         $type = new OptionsAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
-        $type->writeValue($value, 'red');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $type->writeValue(['value' => $row], ['value' => 'red']);
 
-        $type->writeValue($value, null);
-        self::assertNull($value->getAttributeOptionKey());
+        $type->writeValue(['value' => $row], ['value' => null]);
+        self::assertNull($row->getAttributeOptionKey());
 
-        $type->writeValue($value, 'green');
-        $type->writeValue($value, '');
-        self::assertNull($value->getAttributeOptionKey());
+        $type->writeValue(['value' => $row], ['value' => 'green']);
+        $type->writeValue(['value' => $row], ['value' => '']);
+        self::assertNull($row->getAttributeOptionKey());
     }
 
     public function testConfigureFieldFallsBackToOptionKeyWithoutTranslation(): void
@@ -77,7 +77,7 @@ class OptionsAttributeTypeTest extends TestCase
         $field = new FieldMetadata('attributes/1');
         $field->setType('single_select');
 
-        (new OptionsAttributeType())->configureField($field, $attribute->reveal(), 'en');
+        (new OptionsAttributeType())->configureField($field, $attribute->reveal(), 'en', 'value');
 
         $valueOptions = $field->getOptions()['values']->getValue();
         self::assertIsArray($valueOptions);
@@ -98,7 +98,7 @@ class OptionsAttributeTypeTest extends TestCase
         $field = new FieldMetadata('attributes/1');
         $field->setType('single_select');
 
-        (new OptionsAttributeType())->configureField($field, $attribute->reveal(), 'en');
+        (new OptionsAttributeType())->configureField($field, $attribute->reveal(), 'en', 'value');
 
         $options = $field->getOptions();
         self::assertArrayHasKey('values', $options);

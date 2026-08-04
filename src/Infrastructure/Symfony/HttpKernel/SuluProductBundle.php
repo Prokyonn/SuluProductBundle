@@ -1032,6 +1032,7 @@ final class SuluProductBundle extends AbstractBundle
                 new Reference('sulu_http_cache.reference_store'),
                 new Reference('sulu_content.content_resolver'),
                 new Reference('sulu_product.measurement_registry'),
+                new Reference('sulu_product.attribute_type_registry'),
             ])
             ->tag('twig.extension');
 

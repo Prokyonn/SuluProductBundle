@@ -33,25 +33,35 @@ class TextAttributeTypeTest extends TestCase
         self::assertSame('product_attribute_text', $type->getFormKey());
     }
 
-    public function testValueRoundTripUsesTextColumn(): void
+    public function testValueRoundTrip(): void
     {
         $type = new TextAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
 
-        $type->writeValue($value, 'hello');
+        $type->writeValue(['value' => $row], ['value' => 'Hello']);
 
-        self::assertSame('hello', $value->getText());
-        self::assertSame('hello', $type->readValue($value));
+        self::assertSame('Hello', $row->getText());
+        self::assertSame(['value' => 'Hello'], $type->readValue(['value' => $row]));
+    }
+
+    public function testDeclaresSingleValueKey(): void
+    {
+        self::assertSame(['value'], (new TextAttributeType())->getValueKeys());
+    }
+
+    public function testReadValueToleratesMissingRow(): void
+    {
+        self::assertSame(['value' => null], (new TextAttributeType())->readValue([]));
     }
 
     public function testWriteNullClearsText(): void
     {
         $type = new TextAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
-        $type->writeValue($value, 'world');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $type->writeValue(['value' => $row], ['value' => 'world']);
 
-        $type->writeValue($value, null);
+        $type->writeValue(['value' => $row], ['value' => null]);
 
-        self::assertNull($value->getText());
+        self::assertNull($row->getText());
     }
 }

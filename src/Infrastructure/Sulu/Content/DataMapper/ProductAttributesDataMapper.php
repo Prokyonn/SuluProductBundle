@@ -104,7 +104,7 @@ class ProductAttributesDataMapper implements DataMapperInterface
                 $existing->setProductFamilyAttribute($familyAttribute);
             }
 
-            $type->writeValue($existing, $raw);
+            $type->writeValue(['value' => $existing], ['value' => $raw]);
 
             if ($isNew) {
                 $targetDimensionContent->addAttribute($existing);
@@ -136,7 +136,13 @@ class ProductAttributesDataMapper implements DataMapperInterface
             }
 
             $value = $values[$attributeId] ?? null;
-            if (null === $value || $this->isEmpty($value->getValue())) {
+            if (null === $value) {
+                throw new RequiredProductAttributeMissingException($familyAttribute->getAttribute()->getKey());
+            }
+
+            $type = $this->attributeTypeRegistry->get($familyAttribute->getAttribute()->getType());
+            $read = $type->readValue(['value' => $value]);
+            if ($this->isEmpty($read['value'] ?? null)) {
                 throw new RequiredProductAttributeMissingException($familyAttribute->getAttribute()->getKey());
             }
         }

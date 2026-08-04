@@ -81,7 +81,7 @@ class AttributeFieldFactory
             $field->setDescription(\strip_tags($description), $locale);
         }
 
-        $type->configureField($field, $attribute, $locale);
+        $type->configureField($field, $attribute, $locale, 'value');
 
         $unitField = $hasUnit ? $this->buildUnitField($attribute->getId(), $unit, $locale) : null;
 

@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace Sulu\Product\Application\AttributeType;
 
 use Sulu\Product\Domain\Model\AttributeInterface;
-use Sulu\Product\Domain\Model\ProductAttributeValueInterface;
 use Webmozart\Assert\Assert;
 
 final class TextAttributeType extends AbstractAttributeType
@@ -29,21 +28,24 @@ final class TextAttributeType extends AbstractAttributeType
         return 'product_attribute_text';
     }
 
-    public function readValue(ProductAttributeValueInterface $value): mixed
+    public function readValue(array $values): array
     {
-        return $value->getText();
+        return ['value' => ($values['value'] ?? null)?->getText()];
     }
 
-    public function writeValue(ProductAttributeValueInterface $value, mixed $raw): void
+    public function writeValue(array $values, array $raw): void
     {
-        if (null === $raw) {
-            $value->setText(null);
+        $row = $values['value'];
+
+        $value = $raw['value'] ?? null;
+        if (null === $value) {
+            $row->setText(null);
 
             return;
         }
 
-        Assert::string($raw);
+        Assert::string($value);
 
-        $value->setText($raw);
+        $row->setText($value);
     }
 }

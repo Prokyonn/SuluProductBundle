@@ -67,7 +67,7 @@ class ProductAttributesNormalizer implements NormalizerInterface
         foreach ($object->getAttributes() as $attrValue) {
             $attribute = $attrValue->getAttribute();
             $type = $this->attributeTypeRegistry->get($attribute->getType());
-            $attributesMap[$attribute->getId()] = $type->readValue($attrValue);
+            $attributesMap[$attribute->getId()] = $type->readValue(['value' => $attrValue])['value'] ?? null;
         }
 
         $normalizedData['attributes'] = $attributesMap;

@@ -36,63 +36,63 @@ class DateAttributeTypeTest extends TestCase
     public function testValueRoundTripStoresUnixTimestamp(): void
     {
         $type = new DateAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
 
-        $type->writeValue($value, '2026-07-24');
+        $type->writeValue(['value' => $row], ['value' => '2026-07-24']);
 
         $expected = (float) (new \DateTimeImmutable('2026-07-24 00:00:00', new \DateTimeZone('UTC')))->getTimestamp();
-        self::assertSame($expected, $value->getNumber());
-        self::assertSame('2026-07-24', $type->readValue($value));
+        self::assertSame($expected, $row->getNumber());
+        self::assertSame(['value' => '2026-07-24'], $type->readValue(['value' => $row]));
     }
 
     public function testWriteNullClearsNumber(): void
     {
         $type = new DateAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
-        $type->writeValue($value, '2026-07-24');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $type->writeValue(['value' => $row], ['value' => '2026-07-24']);
 
-        $type->writeValue($value, null);
+        $type->writeValue(['value' => $row], ['value' => null]);
 
-        self::assertNull($value->getNumber());
-        self::assertNull($type->readValue($value));
+        self::assertNull($row->getNumber());
+        self::assertSame(['value' => null], $type->readValue(['value' => $row]));
     }
 
     public function testWriteEmptyStringClearsNumber(): void
     {
         $type = new DateAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
-        $type->writeValue($value, '2026-07-24');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $type->writeValue(['value' => $row], ['value' => '2026-07-24']);
 
-        $type->writeValue($value, '');
+        $type->writeValue(['value' => $row], ['value' => '']);
 
-        self::assertNull($value->getNumber());
+        self::assertNull($row->getNumber());
     }
 
     public function testWriteInvalidFormatThrows(): void
     {
         $type = new DateAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
 
         $this->expectException(\InvalidArgumentException::class);
 
-        $type->writeValue($value, 'not-a-date');
+        $type->writeValue(['value' => $row], ['value' => 'not-a-date']);
     }
 
     public function testWriteOverflowDateThrows(): void
     {
         $type = new DateAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
 
         $this->expectException(\InvalidArgumentException::class);
 
-        $type->writeValue($value, '2026-02-31');
+        $type->writeValue(['value' => $row], ['value' => '2026-02-31']);
     }
 
     public function testReadValueReturnsNullWhenNoNumber(): void
     {
         $type = new DateAttributeType();
-        $value = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
+        $row = new ProductAttributeValue(new ProductDimensionContent(new Product()), new Attribute(new AttributeGroup()), 'k');
 
-        self::assertNull($type->readValue($value));
+        self::assertSame(['value' => null], $type->readValue(['value' => $row]));
     }
 }

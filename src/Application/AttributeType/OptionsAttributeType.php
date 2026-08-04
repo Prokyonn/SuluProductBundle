@@ -16,7 +16,6 @@ namespace Sulu\Product\Application\AttributeType;
 use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\FieldMetadata;
 use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\OptionMetadata;
 use Sulu\Product\Domain\Model\AttributeInterface;
-use Sulu\Product\Domain\Model\ProductAttributeValueInterface;
 use Webmozart\Assert\Assert;
 
 final class OptionsAttributeType extends AbstractAttributeType
@@ -31,8 +30,12 @@ final class OptionsAttributeType extends AbstractAttributeType
         return 'product_attribute_options';
     }
 
-    public function configureField(FieldMetadata $field, AttributeInterface $attribute, string $locale): void
-    {
+    public function configureField(
+        FieldMetadata $field,
+        AttributeInterface $attribute,
+        string $locale,
+        string $valueKey,
+    ): void {
         $values = new OptionMetadata();
         $values->setName('values');
         $values->setType(OptionMetadata::TYPE_COLLECTION);
@@ -48,21 +51,24 @@ final class OptionsAttributeType extends AbstractAttributeType
         $field->addOption($values);
     }
 
-    public function readValue(ProductAttributeValueInterface $value): mixed
+    public function readValue(array $values): array
     {
-        return $value->getAttributeOptionKey();
+        return ['value' => ($values['value'] ?? null)?->getAttributeOptionKey()];
     }
 
-    public function writeValue(ProductAttributeValueInterface $value, mixed $raw): void
+    public function writeValue(array $values, array $raw): void
     {
-        if (null === $raw || '' === $raw) {
-            $value->setAttributeOptionKey(null);
+        $row = $values['value'];
+
+        $value = $raw['value'] ?? null;
+        if (null === $value || '' === $value) {
+            $row->setAttributeOptionKey(null);
 
             return;
         }
 
-        Assert::string($raw);
+        Assert::string($value);
 
-        $value->setAttributeOptionKey($raw);
+        $row->setAttributeOptionKey($value);
     }
 }

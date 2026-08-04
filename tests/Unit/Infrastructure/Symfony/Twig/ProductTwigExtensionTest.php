@@ -24,6 +24,8 @@ use Sulu\Component\Localization\Localization;
 use Sulu\Component\Webspace\Analyzer\RequestAnalyzerInterface;
 use Sulu\Content\Application\ContentAggregator\ContentAggregatorInterface;
 use Sulu\Content\Application\ContentResolver\ContentResolverInterface;
+use Sulu\Product\Application\AttributeType\AbstractAttributeType;
+use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
 use Sulu\Product\Domain\Measurement\MeasurementRegistry;
 use Sulu\Product\Domain\Model\Attribute;
 use Sulu\Product\Domain\Model\AttributeGroup;
@@ -76,6 +78,7 @@ class ProductTwigExtensionTest extends TestCase
             $this->referenceStore->reveal(),
             $this->contentResolver->reveal(),
             new MeasurementRegistry(),
+            new AttributeTypeRegistry([]),
         );
     }
 
@@ -620,7 +623,67 @@ class ProductTwigExtensionTest extends TestCase
         /** @var array{attributes: list<array{key: string, label: string, type: string, value: mixed}>} $result */
         $this->assertCount(1, $result['attributes']);
         $this->assertSame('unknown_type', $result['attributes'][0]['type']);
-        // getValue() returns text when no option key or number
-        $this->assertSame('some-value', $result['attributes'][0]['value']);
+        // unregistered type: the has() guard prevents AttributeTypeRegistry::get() from throwing
+        $this->assertNull($result['attributes'][0]['value']);
+    }
+
+    public function testLoadProductFormatsRegisteredTypeWithoutExplicitMatchArm(): void
+    {
+        $product = new Product('uuid-1');
+        $pdc = new ProductDimensionContent($product);
+
+        $attribute = new Attribute(new AttributeGroup());
+        $attribute->setKey('custom');
+        $attribute->setType('custom_type');
+
+        $productAttributeValue = new ProductAttributeValue($pdc, $attribute, 'custom');
+        $productAttributeValue->setText('stub-value');
+
+        $pdc->addAttribute($productAttributeValue);
+
+        $customType = new class() extends AbstractAttributeType {
+            public function getKey(): string
+            {
+                return 'custom_type';
+            }
+
+            public function getFormKey(): string
+            {
+                return 'product_attribute_custom';
+            }
+
+            public function readValue(array $values): array
+            {
+                return ['value' => ($values['value'] ?? null)?->getText()];
+            }
+
+            public function writeValue(array $values, array $raw): void
+            {
+            }
+        };
+
+        $extension = new ProductTwigExtension(
+            $this->productRepository->reveal(),
+            $this->contentAggregator->reveal(),
+            $this->requestAnalyzer->reveal(),
+            $this->referenceStore->reveal(),
+            $this->contentResolver->reveal(),
+            new MeasurementRegistry(),
+            new AttributeTypeRegistry([$customType]),
+        );
+
+        $this->productRepository->findOneBy(Argument::cetera())->willReturn($product);
+        $this->contentAggregator->aggregate($product, Argument::type('array'))
+            ->willReturn($pdc);
+        $this->contentResolver->resolve($pdc, [])->willReturn([]);
+        $this->referenceStore->add('uuid-1', ProductInterface::RESOURCE_KEY)->shouldBeCalled();
+
+        $result = $extension->loadProduct('uuid-1', [], 'en');
+
+        $this->assertIsArray($result);
+        /** @var array{attributes: list<array{key: string, label: string, type: string, value: mixed}>} $result */
+        $this->assertCount(1, $result['attributes']);
+        $this->assertSame('custom_type', $result['attributes'][0]['type']);
+        $this->assertSame('stub-value', $result['attributes'][0]['value']);
     }
 }

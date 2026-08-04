@@ -19,7 +19,6 @@ use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\FieldMetadata;
 use Sulu\Product\Application\AttributeType\AbstractAttributeType;
 use Sulu\Product\Domain\Model\Attribute;
 use Sulu\Product\Domain\Model\AttributeGroup;
-use Sulu\Product\Domain\Model\ProductAttributeValueInterface;
 
 #[CoversClass(AbstractAttributeType::class)]
 class AbstractAttributeTypeTest extends TestCase
@@ -37,12 +36,12 @@ class AbstractAttributeTypeTest extends TestCase
                 return 'product_attribute_stub';
             }
 
-            public function readValue(ProductAttributeValueInterface $value): mixed
+            public function readValue(array $values): array
             {
-                return null;
+                return ['value' => null];
             }
 
-            public function writeValue(ProductAttributeValueInterface $value, mixed $raw): void
+            public function writeValue(array $values, array $raw): void
             {
             }
         };
@@ -53,9 +52,14 @@ class AbstractAttributeTypeTest extends TestCase
         $field = new FieldMetadata('attributes/1');
         $field->setType('text_line');
 
-        $this->type()->configureField($field, new Attribute(new AttributeGroup()), 'en');
+        $this->type()->configureField($field, new Attribute(new AttributeGroup()), 'en', 'value');
 
         self::assertSame('text_line', $field->getType());
         self::assertSame([], $field->getOptions());
+    }
+
+    public function testGetValueKeysDeclaresSingleValueKey(): void
+    {
+        self::assertSame(['value'], $this->type()->getValueKeys());
     }
 }

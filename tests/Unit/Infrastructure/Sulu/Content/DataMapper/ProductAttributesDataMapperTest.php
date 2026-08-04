@@ -223,6 +223,46 @@ class ProductAttributesDataMapperTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testRequiredExistingButEmptyValueThrows(): void
+    {
+        $concretePdc = new ProductDimensionContent(new Product());
+
+        /** @var ObjectProphecy<AttributeInterface> $attribute */
+        $attribute = $this->prophesize(AttributeInterface::class);
+        $attribute->getId()->willReturn(1);
+        $attribute->getKey()->willReturn('attr-1');
+        $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
+        $attribute->isLocalized()->willReturn(false);
+
+        // Row exists but was never populated (e.g. left over from a prior partial save) — empty per readValue().
+        $existingValue = new ProductAttributeValue($concretePdc, $attribute->reveal(), 'attr-1');
+
+        /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttribute */
+        $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
+        $familyAttribute->getAttribute()->willReturn($attribute->reveal());
+        $familyAttribute->isRequired()->willReturn(true);
+        $familyAttribute->isVariantSpecific()->willReturn(false);
+
+        /** @var ObjectProphecy<ProductFamilyInterface> $family */
+        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
+
+        /** @var ObjectProphecy<ProductDimensionContentInterface> $unloc */
+        $unloc = $this->prophesize(ProductDimensionContentInterface::class);
+        $unloc->getProductFamily()->willReturn($family->reveal());
+        $unloc->getResource()->willReturn($this->prophesizeNonVariantResource());
+        $unloc->getAttributes()->willReturn(new ArrayCollection([$existingValue]));
+        /** @var ObjectProphecy<ProductDimensionContentInterface> $loc */
+        $loc = $this->prophesize(ProductDimensionContentInterface::class);
+        $loc->getAttributes()->willReturn(new ArrayCollection());
+
+        $this->expectException(RequiredProductAttributeMissingException::class);
+        $this->expectExceptionMessage('attr-1');
+
+        // Submitted data doesn't mention attribute 1, so the existing (empty) row is left untouched.
+        $this->mapper->map($unloc->reveal(), $loc->reveal(), ['attributes' => []]);
+    }
+
     public function testUpdatesExistingValueInPlace(): void
     {
         $concretePdc = new ProductDimensionContent(new Product());

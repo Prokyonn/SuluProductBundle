@@ -14,7 +14,6 @@ declare(strict_types=1);
 namespace Sulu\Product\Application\AttributeType;
 
 use Sulu\Product\Domain\Model\AttributeInterface;
-use Sulu\Product\Domain\Model\ProductAttributeValueInterface;
 use Webmozart\Assert\Assert;
 
 final class DateAttributeType extends AbstractAttributeType
@@ -31,32 +30,35 @@ final class DateAttributeType extends AbstractAttributeType
         return 'product_attribute_date';
     }
 
-    public function readValue(ProductAttributeValueInterface $value): mixed
+    public function readValue(array $values): array
     {
-        $timestamp = $value->getNumber();
+        $timestamp = ($values['value'] ?? null)?->getNumber();
 
         if (null === $timestamp) {
-            return null;
+            return ['value' => null];
         }
 
-        return (new \DateTimeImmutable('@' . (int) $timestamp))->format(self::FORMAT);
+        return ['value' => (new \DateTimeImmutable('@' . (int) $timestamp))->format(self::FORMAT)];
     }
 
-    public function writeValue(ProductAttributeValueInterface $value, mixed $raw): void
+    public function writeValue(array $values, array $raw): void
     {
-        if (null === $raw || '' === $raw) {
-            $value->setNumber(null);
+        $row = $values['value'];
+
+        $value = $raw['value'] ?? null;
+        if (null === $value || '' === $value) {
+            $row->setNumber(null);
 
             return;
         }
 
-        Assert::string($raw);
+        Assert::string($value);
 
-        $date = \DateTimeImmutable::createFromFormat('!' . self::FORMAT, $raw, new \DateTimeZone('UTC'));
+        $date = \DateTimeImmutable::createFromFormat('!' . self::FORMAT, $value, new \DateTimeZone('UTC'));
 
-        Assert::isInstanceOf($date, \DateTimeImmutable::class, \sprintf('Expected a date in format "%s", got "%s".', self::FORMAT, $raw));
-        Assert::same($date->format(self::FORMAT), $raw, \sprintf('Expected a valid date in format "%s", got "%s".', self::FORMAT, $raw));
+        Assert::isInstanceOf($date, \DateTimeImmutable::class, \sprintf('Expected a date in format "%s", got "%s".', self::FORMAT, $value));
+        Assert::same($date->format(self::FORMAT), $value, \sprintf('Expected a valid date in format "%s", got "%s".', self::FORMAT, $value));
 
-        $value->setNumber((float) $date->getTimestamp());
+        $row->setNumber((float) $date->getTimestamp());
     }
 }

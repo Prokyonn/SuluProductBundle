@@ -18,7 +18,16 @@ use Sulu\Product\Domain\Model\AttributeInterface;
 
 abstract class AbstractAttributeType implements AttributeTypeInterface
 {
-    public function configureField(FieldMetadata $field, AttributeInterface $attribute, string $locale): void
+    public function getValueKeys(): array
     {
+        return ['value'];
+    }
+
+    public function configureField(
+        FieldMetadata $field,
+        AttributeInterface $attribute,
+        string $locale,
+        string $valueKey,
+    ): void {
     }
 }

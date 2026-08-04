@@ -15,6 +15,7 @@ namespace Sulu\Product\Tests\Unit\Application\AttributeType;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Sulu\Product\Application\AttributeType\AttributeTypeInterface;
 use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
 use Sulu\Product\Application\AttributeType\NumberAttributeType;
 use Sulu\Product\Application\AttributeType\TextAttributeType;
@@ -44,5 +45,49 @@ class AttributeTypeRegistryTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('No attribute type registered for key "unknown".');
         $this->registry()->get('unknown');
+    }
+
+    public function testRejectsReservedUnitValueKey(): void
+    {
+        $type = $this->createMock(AttributeTypeInterface::class);
+        $type->method('getKey')->willReturn('broken');
+        $type->method('getValueKeys')->willReturn(['unit']);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        new AttributeTypeRegistry([$type]);
+    }
+
+    public function testRejectsDuplicateValueKeys(): void
+    {
+        $type = $this->createMock(AttributeTypeInterface::class);
+        $type->method('getKey')->willReturn('broken');
+        $type->method('getValueKeys')->willReturn(['a', 'a']);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        new AttributeTypeRegistry([$type]);
+    }
+
+    public function testRejectsMalformedValueKey(): void
+    {
+        $type = $this->createMock(AttributeTypeInterface::class);
+        $type->method('getKey')->willReturn('broken');
+        $type->method('getValueKeys')->willReturn(['Not Valid']);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        new AttributeTypeRegistry([$type]);
+    }
+
+    public function testRejectsEmptyValueKeyList(): void
+    {
+        $type = $this->createMock(AttributeTypeInterface::class);
+        $type->method('getKey')->willReturn('broken');
+        $type->method('getValueKeys')->willReturn([]);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        new AttributeTypeRegistry([$type]);
     }
 }
