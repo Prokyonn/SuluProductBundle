@@ -137,4 +137,27 @@ class ProductAttributeValueTest extends TestCase
         $value->setProductFamilyAttribute(null);
         $this->assertNull($value->getProductFamilyAttribute());
     }
+
+    public function testValueKeyDefaultsToValue(): void
+    {
+        $value = new ProductAttributeValue(
+            new ProductDimensionContent(new Product()),
+            new Attribute(new AttributeGroup()),
+            'weight',
+        );
+
+        self::assertSame('value', $value->getValueKey());
+    }
+
+    public function testValueKeyIsSetFromConstructor(): void
+    {
+        $value = new ProductAttributeValue(
+            new ProductDimensionContent(new Product()),
+            new Attribute(new AttributeGroup()),
+            'weight',
+            'min',
+        );
+
+        self::assertSame('min', $value->getValueKey());
+    }
 }

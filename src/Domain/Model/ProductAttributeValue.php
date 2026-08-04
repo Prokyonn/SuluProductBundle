@@ -19,6 +19,8 @@ class ProductAttributeValue implements ProductAttributeValueInterface
 
     protected string $attributeKey;
 
+    protected string $valueKey = 'value';
+
     protected ?string $attributeOptionKey = null;
 
     protected ?float $number = null;
@@ -37,10 +39,12 @@ class ProductAttributeValue implements ProductAttributeValueInterface
         ProductDimensionContentInterface $productDimensionContent,
         AttributeInterface $attribute,
         string $attributeKey,
+        string $valueKey = 'value',
     ) {
         $this->productDimensionContent = $productDimensionContent;
         $this->attribute = $attribute;
         $this->attributeKey = $attributeKey;
+        $this->valueKey = $valueKey;
     }
 
     public function getId(): int
@@ -51,6 +55,11 @@ class ProductAttributeValue implements ProductAttributeValueInterface
     public function getAttributeKey(): string
     {
         return $this->attributeKey;
+    }
+
+    public function getValueKey(): string
+    {
+        return $this->valueKey;
     }
 
     public function getAttributeOptionKey(): ?string

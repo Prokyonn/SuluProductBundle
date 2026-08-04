@@ -19,6 +19,8 @@ interface ProductAttributeValueInterface
 
     public function getAttributeKey(): string;
 
+    public function getValueKey(): string;
+
     public function getAttributeOptionKey(): ?string;
 
     public function setAttributeOptionKey(?string $key): self;
