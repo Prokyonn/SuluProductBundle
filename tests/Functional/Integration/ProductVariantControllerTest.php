@@ -1135,6 +1135,65 @@ class ProductVariantControllerTest extends SuluTestCase
         $this->assertArrayHasKey('detail', $data);
     }
 
+    public function testPostWithMissingRequiredAttributeReturns422(): void
+    {
+        self::purgeDatabase();
+
+        $axisId = $this->createAttribute('size', 'Size');
+        $familyId = $this->createProductFamily([$axisId => ['enabled' => true, 'required' => true, 'variantSpecific' => true]]);
+        $parentId = $this->createProduct($familyId, 'Parent Product', ProductInterface::TYPE_PRODUCT_WITH_VARIANTS);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products/' . $parentId . '/variants.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-RD-L',
+                'title' => 'Variant L',
+                'attributes' => [$axisId => null],
+            ]) ?: null,
+        );
+
+        $response = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $response);
+        $data = \json_decode((string) $response->getContent(), true);
+        $this->assertIsArray($data);
+        $this->assertArrayHasKey('detail', $data);
+    }
+
+    public function testPostWithInvalidAttributeValueReturns400(): void
+    {
+        self::purgeDatabase();
+
+        $axisId = $this->createAttribute('weight', 'Weight', AttributeInterface::TYPE_NUMBER);
+        $familyId = $this->createProductFamily([$axisId => ['enabled' => true, 'variantSpecific' => true]]);
+        $parentId = $this->createProduct($familyId, 'Parent Product', ProductInterface::TYPE_PRODUCT_WITH_VARIANTS);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products/' . $parentId . '/variants.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-RD-L',
+                'title' => 'Variant L',
+                'attributes' => [$axisId => 'not-a-number'],
+            ]) ?: null,
+        );
+
+        $response = $this->client->getResponse();
+        $this->assertHttpStatusCode(400, $response);
+        $this->assertSame(
+            ['detail' => 'Invalid attribute value provided.'],
+            \json_decode((string) $response->getContent(), true),
+        );
+    }
+
     public function testPutWithInvalidAttributeValueReturns400(): void
     {
         self::purgeDatabase();

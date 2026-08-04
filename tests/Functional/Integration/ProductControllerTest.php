@@ -372,6 +372,58 @@ class ProductControllerTest extends SuluTestCase
         $this->assertArrayHasKey('detail', $data);
     }
 
+    public function testPostWithMissingRequiredAttributeReturns422(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createRequiredAttribute();
+        $familyId = $this->createProductFamily($attributeId);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'title' => 'My Product',
+                'productFamily' => $familyId,
+                'attributes' => [$attributeId => null],
+            ]) ?: null,
+        );
+
+        $response = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $response);
+
+        $data = \json_decode((string) $response->getContent(), true);
+        $this->assertIsArray($data);
+        $this->assertArrayHasKey('detail', $data);
+    }
+
+    public function testPostWithInvalidAttributeValueReturns400(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createRequiredAttribute();
+        $familyId = $this->createProductFamily($attributeId, false);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'title' => 'My Product',
+                'productFamily' => $familyId,
+                'attributes' => [$attributeId => 'not-a-number'],
+            ]) ?: null,
+        );
+
+        $response = $this->client->getResponse();
+        $this->assertHttpStatusCode(400, $response);
+    }
+
     public function testLocalizedAttributeValueIsStoredPerLocale(): void
     {
         self::purgeDatabase();

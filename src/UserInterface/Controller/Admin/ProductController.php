@@ -34,8 +34,8 @@ use Sulu\Product\Application\Message\ModifyProductMessage;
 use Sulu\Product\Application\Message\RemoveProductMessage;
 use Sulu\Product\Application\Message\RemoveProductTranslationMessage;
 use Sulu\Product\Application\Message\RestoreProductVersionMessage;
+use Sulu\Product\Domain\Exception\ProductAttributeValidationException;
 use Sulu\Product\Domain\Exception\ProductNotFoundException;
-use Sulu\Product\Domain\Exception\RequiredProductAttributeMissingException;
 use Sulu\Product\Domain\Model\ProductInterface;
 use Sulu\Product\Domain\Repository\ProductRepositoryInterface;
 use Sulu\Product\Infrastructure\Sulu\Admin\ProductAdmin;
@@ -150,8 +150,15 @@ final class ProductController implements SecuredControllerInterface
         );
 
         $message = new CreateProductMessage($data);
-        /** @var ProductInterface $product */
-        $product = $this->handle(new Envelope($message, [new EnableFlushStamp()]));
+
+        try {
+            /** @var ProductInterface $product */
+            $product = $this->handle(new Envelope($message, [new EnableFlushStamp()]));
+        } catch (ProductAttributeValidationException $e) {
+            return new JsonResponse(['detail' => $e->getMessage()], 422);
+        } catch (InvalidArgumentException $e) {
+            return new JsonResponse(['detail' => 'Invalid attribute value provided.'], 400);
+        }
 
         $response = $this->getAction($request, $product->getUuid());
         $response->setStatusCode(201);
@@ -173,7 +180,7 @@ final class ProductController implements SecuredControllerInterface
             $this->handle(new Envelope($message, [new EnableFlushStamp()]));
         } catch (ProductNotFoundException $e) {
             throw new NotFoundHttpException($e->getMessage(), $e);
-        } catch (RequiredProductAttributeMissingException $e) {
+        } catch (ProductAttributeValidationException $e) {
             return new JsonResponse(['detail' => $e->getMessage()], 422);
         } catch (InvalidArgumentException $e) {
             return new JsonResponse(['detail' => 'Invalid attribute value provided.'], 400);

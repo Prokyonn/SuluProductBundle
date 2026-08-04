@@ -29,8 +29,8 @@ use Sulu\Messenger\Infrastructure\Symfony\Messenger\FlushMiddleware\EnableFlushS
 use Sulu\Product\Application\Message\CreateProductMessage;
 use Sulu\Product\Application\Message\ModifyProductMessage;
 use Sulu\Product\Application\Message\RemoveProductMessage;
+use Sulu\Product\Domain\Exception\ProductAttributeValidationException;
 use Sulu\Product\Domain\Exception\ProductNotFoundException;
-use Sulu\Product\Domain\Exception\RequiredProductAttributeMissingException;
 use Sulu\Product\Domain\Model\ProductFamilyInterface;
 use Sulu\Product\Domain\Model\ProductInterface;
 use Sulu\Product\Domain\Repository\ProductFamilyRepositoryInterface;
@@ -158,8 +158,15 @@ final class ProductVariantController implements SecuredControllerInterface
         $data = $this->buildData($request, $parentId, $parent);
 
         $message = new CreateProductMessage($data);
-        /** @var ProductInterface $variant */
-        $variant = $this->handle(new Envelope($message, [new EnableFlushStamp()]));
+
+        try {
+            /** @var ProductInterface $variant */
+            $variant = $this->handle(new Envelope($message, [new EnableFlushStamp()]));
+        } catch (ProductAttributeValidationException $e) {
+            return new JsonResponse(['detail' => $e->getMessage()], 422);
+        } catch (InvalidArgumentException $e) {
+            return new JsonResponse(['detail' => 'Invalid attribute value provided.'], 400);
+        }
 
         $response = $this->getAction($request, $parentId, $variant->getUuid());
         $response->setStatusCode(201);
@@ -179,7 +186,7 @@ final class ProductVariantController implements SecuredControllerInterface
 
         try {
             $this->handle(new Envelope($message, [new EnableFlushStamp()]));
-        } catch (RequiredProductAttributeMissingException $e) {
+        } catch (ProductAttributeValidationException $e) {
             return new JsonResponse(['detail' => $e->getMessage()], 422);
         } catch (InvalidArgumentException $e) {
             return new JsonResponse(['detail' => 'Invalid attribute value provided.'], 400);

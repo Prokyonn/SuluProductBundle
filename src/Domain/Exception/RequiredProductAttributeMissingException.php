@@ -13,21 +13,14 @@ declare(strict_types=1);
 
 namespace Sulu\Product\Domain\Exception;
 
-class RequiredProductAttributeMissingException extends \Exception
+class RequiredProductAttributeMissingException extends ProductAttributeValidationException
 {
-    public function __construct(
-        private readonly string $attributeKey,
-        ?\Throwable $previous = null,
-    ) {
+    public function __construct(string $attributeKey, ?\Throwable $previous = null)
+    {
         parent::__construct(
+            $attributeKey,
             \sprintf('The required product attribute "%s" is missing a value.', $attributeKey),
-            0,
             $previous,
         );
-    }
-
-    public function getAttributeKey(): string
-    {
-        return $this->attributeKey;
     }
 }
