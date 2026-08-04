@@ -9,6 +9,10 @@ twig:
     paths:
         - '%kernel.project_dir%/templates'
 
+services:
+    Sulu\Product\Tests\Application\AttributeType\ThreePartAttributeType:
+        autoconfigure: true
+
 sulu_admin:
     forms:
         directories:

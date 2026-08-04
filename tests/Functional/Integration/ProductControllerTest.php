@@ -15,9 +15,13 @@ namespace Sulu\Product\Tests\Functional\Integration;
 
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\FieldMetadata;
+use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\FormMetadata;
+use Sulu\Bundle\AdminBundle\Metadata\FormMetadata\FormMetadataProvider;
 use Sulu\Bundle\TestBundle\Testing\SuluTestCase;
 use Sulu\Product\Domain\Model\AttributeInterface;
 use Sulu\Product\Domain\Model\AttributeTranslation;
+use Sulu\Product\Domain\Model\ProductAttributeValue;
 use Sulu\Product\Domain\Model\ProductDimensionContent;
 use Sulu\Product\Domain\Model\ProductInterface;
 use Sulu\Product\Domain\Repository\AttributeGroupRepositoryInterface;
@@ -152,6 +156,83 @@ class ProductControllerTest extends SuluTestCase
         $em->flush();
 
         return $attribute->getId();
+    }
+
+    private function createRangeAttribute(): int
+    {
+        $container = self::getContainer();
+
+        /** @var AttributeGroupRepositoryInterface $groupRepository */
+        $groupRepository = $container->get(AttributeGroupRepositoryInterface::class);
+        /** @var AttributeRepositoryInterface $attributeRepository */
+        $attributeRepository = $container->get(AttributeRepositoryInterface::class);
+        /** @var EntityManagerInterface $em */
+        $em = $container->get('doctrine.orm.entity_manager');
+
+        $group = $groupRepository->create();
+        $groupRepository->save($group);
+
+        $attribute = $attributeRepository->create($group);
+        $attribute->setKey('dimensions');
+        $attribute->setType(AttributeInterface::TYPE_RANGE);
+        $attribute->addTranslation(new AttributeTranslation($attribute, 'en', 'Dimensions'));
+        $attributeRepository->save($attribute);
+
+        $em->flush();
+
+        return $attribute->getId();
+    }
+
+    /**
+     * Attached to a family, this attribute type proves the generic multi-part value mechanism -
+     * used so far only by {@see AttributeInterface::TYPE_RANGE} - generalises to a fixture with
+     * three value keys without touching ProductAttributesDataMapper, ProductAttributesNormalizer
+     * or AttributeFieldFactory.
+     *
+     * @see \Sulu\Product\Tests\Application\AttributeType\ThreePartAttributeType
+     */
+    private function createThreePartAttribute(): int
+    {
+        $container = self::getContainer();
+
+        /** @var AttributeGroupRepositoryInterface $groupRepository */
+        $groupRepository = $container->get(AttributeGroupRepositoryInterface::class);
+        /** @var AttributeRepositoryInterface $attributeRepository */
+        $attributeRepository = $container->get(AttributeRepositoryInterface::class);
+        /** @var EntityManagerInterface $em */
+        $em = $container->get('doctrine.orm.entity_manager');
+
+        $group = $groupRepository->create();
+        $groupRepository->save($group);
+
+        $attribute = $attributeRepository->create($group);
+        $attribute->setKey('dimensions_3d');
+        $attribute->setType('three_part');
+        $attribute->addTranslation(new AttributeTranslation($attribute, 'en', 'Dimensions 3D'));
+        $attributeRepository->save($attribute);
+
+        $em->flush();
+
+        return $attribute->getId();
+    }
+
+    /**
+     * @return list<ProductAttributeValue>
+     */
+    private function getPersistedAttributeValues(string $productId): array
+    {
+        /** @var EntityManagerInterface $em */
+        $em = self::getContainer()->get('doctrine.orm.entity_manager');
+
+        /** @var list<ProductAttributeValue> $rows */
+        $rows = $em->createQuery(
+            'SELECT v FROM ' . ProductAttributeValue::class . ' v
+             JOIN v.productDimensionContent pdc
+             JOIN pdc.product p
+             WHERE p.uuid = :uuid',
+        )->setParameter('uuid', $productId)->getResult();
+
+        return $rows;
     }
 
     public function testGetEmptyList(): void
@@ -820,5 +901,227 @@ class ProductControllerTest extends SuluTestCase
         $this->assertIsArray($listData['_embedded']['products']);
         $ids = \array_column($listData['_embedded']['products'], 'id');
         $this->assertContains($id, $ids);
+    }
+
+    /**
+     * The abstraction guard: a fixture type declaring three value keys (a/b/c) must round-trip
+     * through the field factory, the data mapper and the normalizer without any change to those
+     * classes - proving the multi-part mechanism the range type introduced actually generalises.
+     */
+    public function testThreePartTypeRoundTripsWithoutMapperChanges(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createThreePartAttribute();
+        $familyId = $this->createProductFamily($attributeId, false);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'title' => 'My Product',
+                'productFamily' => $familyId,
+                'attributes' => [
+                    $attributeId . '_a' => '1',
+                    $attributeId . '_b' => '2',
+                    $attributeId . '_c' => '3',
+                ],
+            ]) ?: null,
+        );
+        $response = $this->client->getResponse();
+        $this->assertHttpStatusCode(201, $response);
+        $data = \json_decode((string) $response->getContent(), true);
+        $this->assertIsArray($data);
+        $id = $data['id'];
+        $this->assertIsString($id);
+
+        // Three rows persisted, keyed a/b/c - ProductAttributesDataMapper generalised with no changes.
+        $valueKeys = \array_map(
+            static fn (ProductAttributeValue $row): string => $row->getValueKey(),
+            $this->getPersistedAttributeValues($id),
+        );
+        \sort($valueKeys);
+        $this->assertSame(['a', 'b', 'c'], $valueKeys);
+
+        // GET returns all three suffixed keys - ProductAttributesNormalizer generalised with no changes.
+        $this->client->request('GET', '/admin/api/products/' . $id . '.json?locale=en');
+        $this->assertHttpStatusCode(200, $this->client->getResponse());
+        $fetched = \json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertIsArray($fetched);
+        $this->assertIsArray($fetched['attributes']);
+        $this->assertEqualsWithDelta(1.0, $fetched['attributes'][$attributeId . '_a'], 0.0001);
+        $this->assertEqualsWithDelta(2.0, $fetched['attributes'][$attributeId . '_b'], 0.0001);
+        $this->assertEqualsWithDelta(3.0, $fetched['attributes'][$attributeId . '_c'], 0.0001);
+
+        // The admin form metadata pipeline resolves three fields from the fixture's own form
+        // fragment (tests/Application/config/forms/product_attribute_three_part.xml) -
+        // AttributeFieldFactory generalised with no changes.
+        $container = self::getContainer();
+        /** @var FormMetadataProvider $formMetadataProvider */
+        $formMetadataProvider = $container->get('sulu_admin.form_metadata_provider');
+        $formMetadata = $formMetadataProvider->getMetadata('product_details', 'en', ['id' => $id]);
+        $this->assertInstanceOf(FormMetadata::class, $formMetadata);
+
+        $flatFields = $formMetadata->getFlatFieldMetadata();
+        foreach (['a', 'b', 'c'] as $valueKey) {
+            $field = $flatFields['attributes/' . $attributeId . '_' . $valueKey] ?? null;
+            $this->assertInstanceOf(FieldMetadata::class, $field);
+            $this->assertSame('number', $field->getType());
+            $this->assertSame(4, $field->getColSpan());
+        }
+    }
+
+    public function testHalfFilledOptionalRangeReturns422(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createRangeAttribute();
+        $familyId = $this->createProductFamily($attributeId, false);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'title' => 'My Product',
+                'productFamily' => $familyId,
+                'attributes' => [$attributeId . '_min' => '1'],
+            ]) ?: null,
+        );
+        $postResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $postResponse);
+        $postData = \json_decode((string) $postResponse->getContent(), true);
+        $this->assertIsArray($postData);
+        $this->assertArrayHasKey('detail', $postData);
+
+        $id = $this->createProduct($familyId);
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $id . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'attributes' => [$attributeId . '_min' => '1'],
+            ]) ?: null,
+        );
+        $putResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $putResponse);
+        $putData = \json_decode((string) $putResponse->getContent(), true);
+        $this->assertIsArray($putData);
+        $this->assertArrayHasKey('detail', $putData);
+    }
+
+    public function testMinGreaterThanMaxReturns422(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createRangeAttribute();
+        $familyId = $this->createProductFamily($attributeId, false);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'title' => 'My Product',
+                'productFamily' => $familyId,
+                'attributes' => [$attributeId . '_min' => '10', $attributeId . '_max' => '5'],
+            ]) ?: null,
+        );
+        $postResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $postResponse);
+        $postData = \json_decode((string) $postResponse->getContent(), true);
+        $this->assertIsArray($postData);
+        $this->assertArrayHasKey('detail', $postData);
+
+        $id = $this->createProduct($familyId);
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $id . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'attributes' => [$attributeId . '_min' => '10', $attributeId . '_max' => '5'],
+            ]) ?: null,
+        );
+        $putResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $putResponse);
+        $putData = \json_decode((string) $putResponse->getContent(), true);
+        $this->assertIsArray($putData);
+        $this->assertArrayHasKey('detail', $putData);
+    }
+
+    /**
+     * Replaces a merger-level unit test that cannot exercise this: ProductAttributesMerger only
+     * adds rows to a transient, in-memory dimension content, and persistence happens afterwards
+     * from data normalized out of that transient merge - by the time a real INSERT is issued, the
+     * per-key grouping has already collapsed any duplicate, so the database's own unique
+     * constraint is never actually reached. Only a real publish, through the HTTP layer and the
+     * real EntityManager, exercises it.
+     */
+    public function testPublishingAProductWithARangeDoesNotViolateTheUniqueConstraint(): void
+    {
+        self::purgeDatabase();
+        $attributeId = $this->createRangeAttribute();
+        $familyId = $this->createProductFamily($attributeId, false);
+        $id = $this->createProduct($familyId);
+
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $id . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'title' => 'My Product',
+                'attributes' => [$attributeId . '_min' => '1', $attributeId . '_max' => '5'],
+            ]) ?: null,
+        );
+        $this->assertHttpStatusCode(200, $this->client->getResponse());
+
+        $this->client->request('POST', '/admin/api/products/' . $id . '.json?locale=en&action=publish');
+        $this->assertHttpStatusCode(200, $this->client->getResponse());
+
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $id . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'title' => 'My Product',
+                'attributes' => [$attributeId . '_min' => '10', $attributeId . '_max' => '50'],
+            ]) ?: null,
+        );
+        $this->assertHttpStatusCode(200, $this->client->getResponse());
+
+        // Re-publishing must not violate UNQ_pr_product_attribute_value - if it did, the flush
+        // triggered by this request would throw and the assertion below would never run.
+        $this->client->request('POST', '/admin/api/products/' . $id . '.json?locale=en&action=publish');
+        $this->assertHttpStatusCode(200, $this->client->getResponse());
+
+        $byDimensionContent = [];
+        foreach ($this->getPersistedAttributeValues($id) as $row) {
+            $byDimensionContent[\spl_object_id($row->getProductDimensionContent())][] = $row->getValueKey();
+        }
+
+        $this->assertNotEmpty($byDimensionContent);
+        foreach ($byDimensionContent as $valueKeys) {
+            \sort($valueKeys);
+            $this->assertSame(['max', 'min'], $valueKeys);
+        }
     }
 }

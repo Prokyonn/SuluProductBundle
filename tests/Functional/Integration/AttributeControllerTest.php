@@ -533,6 +533,82 @@ class AttributeControllerTest extends SuluTestCase
         $this->assertStringContainsString('put-dup-first', $detail);
     }
 
+    public function testCreateAndUpdateRangeAttributeWithConfig(): void
+    {
+        self::purgeDatabase();
+        $groupId = $this->createGroup();
+
+        $this->client->request(
+            'POST',
+            '/admin/api/attributes.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'key' => 'dimensions',
+                'name' => 'Dimensions',
+                'type' => 'range',
+                'group' => $groupId,
+                'config' => [
+                    'unit' => 'MILLIMETER',
+                    'step' => 0.5,
+                    'displayFormat' => '%value% mm',
+                ],
+            ]) ?: null,
+        );
+        $postResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(201, $postResponse);
+        $postData = \json_decode((string) $postResponse->getContent(), true);
+        $this->assertIsArray($postData);
+        $id = $postData['id'];
+        $this->assertIsString($id);
+
+        $this->client->request('GET', '/admin/api/attributes/' . $id . '.json?locale=en');
+        $response = $this->client->getResponse();
+        $this->assertHttpStatusCode(200, $response);
+
+        $data = \json_decode((string) $response->getContent(), true);
+        $this->assertIsArray($data);
+        $this->assertSame('range', $data['type']);
+
+        $config = $data['config'];
+        $this->assertIsArray($config);
+        $this->assertSame('MILLIMETER', $config['unit']);
+        $this->assertSame(0.5, $config['step']);
+        $this->assertSame('%value% mm', $config['displayFormat']);
+
+        $this->client->request(
+            'PUT',
+            '/admin/api/attributes/' . $id . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'key' => 'dimensions',
+                'name' => 'Dimensions',
+                'type' => 'range',
+                'position' => 0,
+                'config' => [
+                    'unit' => 'MILLIMETER',
+                    'step' => 1,
+                    'displayFormat' => '%value% mm exact',
+                ],
+            ]) ?: null,
+        );
+        $putResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(200, $putResponse);
+
+        $putData = \json_decode((string) $putResponse->getContent(), true);
+        $this->assertIsArray($putData);
+        $updatedConfig = $putData['config'];
+        $this->assertIsArray($updatedConfig);
+        $this->assertSame('MILLIMETER', $updatedConfig['unit']);
+        $this->assertSame(1, $updatedConfig['step']);
+        $this->assertSame('%value% mm exact', $updatedConfig['displayFormat']);
+    }
+
     public function testGetFallsBackToDefaultLocaleForTranslation(): void
     {
         self::purgeDatabase();

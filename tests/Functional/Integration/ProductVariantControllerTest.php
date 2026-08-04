@@ -1354,4 +1354,193 @@ class ProductVariantControllerTest extends SuluTestCase
 
         $this->assertHttpStatusCode(500, $this->client->getResponse());
     }
+
+    /**
+     * A shared (non-variant-specific) multi-part attribute submitted on the variant via its
+     * suffixed keys (e.g. "{id}_min"/"{id}_max") must write NO rows on the variant - for either
+     * write path. If it did, the rows would be a variant-owned copy of a value that belongs to
+     * the parent, and would then be carried forward into the live and version dimension contents
+     * on publish, corrupting the parent's own data.
+     */
+    public function testVariantPutIgnoresSharedAttributeWithSuffixedKeys(): void
+    {
+        self::purgeDatabase();
+
+        $sharedId = $this->createAttribute('dimensions', 'Dimensions', AttributeInterface::TYPE_RANGE);
+        $familyId = $this->createProductFamily([
+            $sharedId => ['enabled' => true, 'variantSpecific' => false],
+        ]);
+        $parentId = $this->createProduct($familyId, 'Parent Product', ProductInterface::TYPE_PRODUCT_WITH_VARIANTS);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products/' . $parentId . '/variants.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-RD-L',
+                'title' => 'Variant L',
+                'attributes' => [$sharedId . '_min' => '1', $sharedId . '_max' => '5'],
+            ]) ?: null,
+        );
+        $response = $this->client->getResponse();
+        $this->assertHttpStatusCode(201, $response);
+        $created = \json_decode((string) $response->getContent(), true);
+        $this->assertIsArray($created);
+        $childId = $created['id'];
+        $this->assertIsString($childId);
+
+        $this->assertSame([], $this->getPersistedAttributeValueKeys($childId));
+
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $parentId . '/variants/' . $childId . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-RD-L',
+                'title' => 'Variant L',
+                'attributes' => [$sharedId . '_min' => '2', $sharedId . '_max' => '10'],
+            ]) ?: null,
+        );
+        $this->assertHttpStatusCode(200, $this->client->getResponse());
+
+        $this->assertSame([], $this->getPersistedAttributeValueKeys($childId));
+    }
+
+    public function testHalfFilledOptionalRangeReturns422(): void
+    {
+        self::purgeDatabase();
+
+        $axisId = $this->createAttribute('dimensions', 'Dimensions', AttributeInterface::TYPE_RANGE);
+        $familyId = $this->createProductFamily([$axisId => ['enabled' => true, 'variantSpecific' => true]]);
+        $parentId = $this->createProduct($familyId, 'Parent Product', ProductInterface::TYPE_PRODUCT_WITH_VARIANTS);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products/' . $parentId . '/variants.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-HALF-POST',
+                'title' => 'Variant L',
+                'attributes' => [$axisId . '_min' => '1'],
+            ]) ?: null,
+        );
+        $postResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $postResponse);
+        $postData = \json_decode((string) $postResponse->getContent(), true);
+        $this->assertIsArray($postData);
+        $this->assertArrayHasKey('detail', $postData);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products/' . $parentId . '/variants.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-HALF-PUT',
+                'title' => 'Variant L',
+                'attributes' => [$axisId . '_min' => '1', $axisId . '_max' => '5'],
+            ]) ?: null,
+        );
+        $this->assertHttpStatusCode(201, $this->client->getResponse());
+        $created = \json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertIsArray($created);
+        $childId = $created['id'];
+        $this->assertIsString($childId);
+
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $parentId . '/variants/' . $childId . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-HALF-PUT',
+                'title' => 'Variant L',
+                'attributes' => [$axisId . '_min' => '1'],
+            ]) ?: null,
+        );
+        $putResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $putResponse);
+        $putData = \json_decode((string) $putResponse->getContent(), true);
+        $this->assertIsArray($putData);
+        $this->assertArrayHasKey('detail', $putData);
+    }
+
+    public function testMinGreaterThanMaxReturns422(): void
+    {
+        self::purgeDatabase();
+
+        $axisId = $this->createAttribute('dimensions', 'Dimensions', AttributeInterface::TYPE_RANGE);
+        $familyId = $this->createProductFamily([$axisId => ['enabled' => true, 'variantSpecific' => true]]);
+        $parentId = $this->createProduct($familyId, 'Parent Product', ProductInterface::TYPE_PRODUCT_WITH_VARIANTS);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products/' . $parentId . '/variants.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-INV-POST',
+                'title' => 'Variant L',
+                'attributes' => [$axisId . '_min' => '10', $axisId . '_max' => '5'],
+            ]) ?: null,
+        );
+        $postResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $postResponse);
+        $postData = \json_decode((string) $postResponse->getContent(), true);
+        $this->assertIsArray($postData);
+        $this->assertArrayHasKey('detail', $postData);
+
+        $this->client->request(
+            'POST',
+            '/admin/api/products/' . $parentId . '/variants.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-INV-PUT',
+                'title' => 'Variant L',
+                'attributes' => [$axisId . '_min' => '1', $axisId . '_max' => '5'],
+            ]) ?: null,
+        );
+        $this->assertHttpStatusCode(201, $this->client->getResponse());
+        $created = \json_decode((string) $this->client->getResponse()->getContent(), true);
+        $this->assertIsArray($created);
+        $childId = $created['id'];
+        $this->assertIsString($childId);
+
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $parentId . '/variants/' . $childId . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'code' => 'CX3-INV-PUT',
+                'title' => 'Variant L',
+                'attributes' => [$axisId . '_min' => '10', $axisId . '_max' => '5'],
+            ]) ?: null,
+        );
+        $putResponse = $this->client->getResponse();
+        $this->assertHttpStatusCode(422, $putResponse);
+        $putData = \json_decode((string) $putResponse->getContent(), true);
+        $this->assertIsArray($putData);
+        $this->assertArrayHasKey('detail', $putData);
+    }
 }
