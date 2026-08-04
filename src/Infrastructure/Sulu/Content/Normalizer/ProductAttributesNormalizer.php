@@ -15,6 +15,7 @@ namespace Sulu\Product\Infrastructure\Sulu\Content\Normalizer;
 
 use Sulu\Content\Application\ContentNormalizer\Normalizer\NormalizerInterface;
 use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
+use Sulu\Product\Domain\Measurement\MeasurementRegistry;
 use Sulu\Product\Domain\Model\AttributeInterface;
 use Sulu\Product\Domain\Model\ProductAttributeValueInterface;
 use Sulu\Product\Domain\Model\ProductDimensionContentInterface;
@@ -23,6 +24,7 @@ class ProductAttributesNormalizer implements NormalizerInterface
 {
     public function __construct(
         private readonly AttributeTypeRegistry $attributeTypeRegistry,
+        private readonly MeasurementRegistry $measurementRegistry,
     ) {
     }
 
@@ -61,10 +63,8 @@ class ProductAttributesNormalizer implements NormalizerInterface
                     $attributesMap[$attribute->getId() . '_' . $key] = null;
                 }
 
-                $config = $attribute->getConfig();
-                $measurementFamily = $config['measurementFamily'] ?? null;
-                $unit = $config['unit'] ?? null;
-                if (\is_string($measurementFamily) && \is_string($unit)) {
+                $unit = $attribute->getConfig()['unit'] ?? null;
+                if (\is_string($unit) && null !== $this->measurementRegistry->findUnit($unit)) {
                     $attributesMap[$attribute->getId() . '_unit'] = $unit;
                 }
             }

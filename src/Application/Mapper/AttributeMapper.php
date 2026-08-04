@@ -35,7 +35,13 @@ final class AttributeMapper implements AttributeMapperInterface
 
         $data = $message->getData();
         if (\array_key_exists('localized', $data)) {
-            $attribute->setLocalized((bool) $data['localized']);
+            $localized = (bool) $data['localized'];
+
+            if ($message instanceof ModifyAttributeMessage && $localized !== $attribute->isLocalized()) {
+                throw new \InvalidArgumentException('The "localized" flag cannot be changed after an attribute has been created.');
+            }
+
+            $attribute->setLocalized($localized);
         }
 
         if (null === $attribute->getDefaultLocale()) {

@@ -148,6 +148,46 @@ class AttributeMapperTest extends TestCase
         $this->assertTrue($attribute->isLocalized());
     }
 
+    public function testMapAttributeDataThrowsWhenLocalizedChangesOnExistingAttribute(): void
+    {
+        $group = new AttributeGroup();
+        $attribute = new Attribute($group);
+        $attribute->setKey('weight');
+        $attribute->setType('number');
+        $attribute->setLocalized(false);
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->mapper->mapAttributeData($attribute, new ModifyAttributeMessage(['uuid' => 'attribute-uuid'], [
+            'locale' => 'en',
+            'key' => 'weight',
+            'type' => 'number',
+            'name' => 'Weight',
+            'localized' => true,
+        ]));
+    }
+
+    public function testMapAttributeDataAllowsUnchangedLocalizedOnExistingAttribute(): void
+    {
+        $group = new AttributeGroup();
+        $attribute = new Attribute($group);
+        $attribute->setKey('weight');
+        $attribute->setType('number');
+        $attribute->setLocalized(true);
+
+        $this->attributeRepository->findNextPositionInGroup($group)->willReturn(1);
+
+        $this->mapper->mapAttributeData($attribute, new ModifyAttributeMessage(['uuid' => 'attribute-uuid'], [
+            'locale' => 'en',
+            'key' => 'weight',
+            'type' => 'number',
+            'name' => 'Weight',
+            'localized' => true,
+        ]));
+
+        $this->assertTrue($attribute->isLocalized());
+    }
+
     public function testMapPersistsUnitInConfig(): void
     {
         $group = new AttributeGroup();

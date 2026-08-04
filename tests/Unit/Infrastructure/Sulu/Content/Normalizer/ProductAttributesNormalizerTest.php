@@ -20,6 +20,7 @@ use Prophecy\PhpUnit\ProphecyTrait;
 use Prophecy\Prophecy\ObjectProphecy;
 use Sulu\Product\Application\AttributeType\AttributeTypeRegistry;
 use Sulu\Product\Application\AttributeType\NumberAttributeType;
+use Sulu\Product\Domain\Measurement\MeasurementRegistry;
 use Sulu\Product\Domain\Model\AttributeInterface;
 use Sulu\Product\Domain\Model\Product;
 use Sulu\Product\Domain\Model\ProductAttributeValue;
@@ -40,6 +41,7 @@ class ProductAttributesNormalizerTest extends TestCase
     {
         $this->normalizer = new ProductAttributesNormalizer(
             new AttributeTypeRegistry([new NumberAttributeType()]),
+            new MeasurementRegistry(),
         );
     }
 
@@ -114,12 +116,12 @@ class ProductAttributesNormalizerTest extends TestCase
         $this->assertNull($attributes['42_value']);
     }
 
-    public function testEnhancePrePopulatesUnitKeyForMeasurementFamilyAttribute(): void
+    public function testEnhancePrePopulatesUnitKeyFromConfigUnitAlone(): void
     {
         /** @var ObjectProphecy<AttributeInterface> $attribute */
         $attribute = $this->prophesize(AttributeInterface::class);
         $attribute->getId()->willReturn(42);
-        $attribute->getConfig()->willReturn(['measurementFamily' => 'length', 'unit' => 'meter']);
+        $attribute->getConfig()->willReturn(['unit' => 'MILLIMETER']);
         $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
 
         /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttribute */
@@ -138,7 +140,34 @@ class ProductAttributesNormalizerTest extends TestCase
         $result = $this->normalizer->enhance($dc->reveal(), []);
 
         $this->assertIsArray($result['attributes']);
-        $this->assertSame('meter', $result['attributes']['42_unit']);
+        $this->assertSame('MILLIMETER', $result['attributes']['42_unit']);
+    }
+
+    public function testEnhanceDoesNotPrePopulateUnitKeyForUnknownUnit(): void
+    {
+        /** @var ObjectProphecy<AttributeInterface> $attribute */
+        $attribute = $this->prophesize(AttributeInterface::class);
+        $attribute->getId()->willReturn(42);
+        $attribute->getConfig()->willReturn(['unit' => 'NOT_A_REAL_UNIT']);
+        $attribute->getType()->willReturn(AttributeInterface::TYPE_NUMBER);
+
+        /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttribute */
+        $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
+        $familyAttribute->getAttribute()->willReturn($attribute->reveal());
+
+        /** @var ObjectProphecy<ProductFamilyInterface> $family */
+        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
+
+        /** @var ObjectProphecy<ProductDimensionContentInterface> $dc */
+        $dc = $this->prophesize(ProductDimensionContentInterface::class);
+        $dc->getProductFamily()->willReturn($family->reveal());
+        $dc->getAttributes()->willReturn(new ArrayCollection());
+
+        $result = $this->normalizer->enhance($dc->reveal(), []);
+
+        $this->assertIsArray($result['attributes']);
+        $this->assertArrayNotHasKey('42_unit', $result['attributes']);
     }
 
     public function testEnhanceWithAttributeValueSetsValue(): void

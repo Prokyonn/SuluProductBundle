@@ -550,6 +550,7 @@ final class SuluProductBundle extends AbstractBundle
             ->class(ProductAttributesNormalizer::class)
             ->args([
                 new Reference('sulu_product.attribute_type_registry'),
+                new Reference('sulu_product.measurement_registry'),
             ])
             ->tag('sulu_content.normalizer');
 
