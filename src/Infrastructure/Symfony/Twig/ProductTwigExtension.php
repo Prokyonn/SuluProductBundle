@@ -108,20 +108,25 @@ class ProductTwigExtension extends AbstractExtension
      */
     private function formatAttributes(ProductDimensionContentInterface $dimensionContent, string $locale): array
     {
-        /** @var array<string, ProductAttributeValueInterface> $firstRowByAttribute */
+        // Grouped by the attribute's object identity, not its (denormalised, reusable) key
+        // string: attributeKey is a snapshot taken at row construction and never resynced, so a
+        // rename followed by another attribute reusing the freed key would otherwise collide two
+        // unrelated attributes into a single bucket. spl_object_id() also works for non-persisted
+        // entities, where getId() throws.
+        /** @var array<int, ProductAttributeValueInterface> $firstRowByAttribute */
         $firstRowByAttribute = [];
-        /** @var array<string, array<string, ProductAttributeValueInterface>> $rowsByAttribute */
+        /** @var array<int, array<string, ProductAttributeValueInterface>> $rowsByAttribute */
         $rowsByAttribute = [];
         foreach ($dimensionContent->getAttributes() as $row) {
-            $attributeKey = $row->getAttributeKey();
-            $firstRowByAttribute[$attributeKey] ??= $row;
-            $rowsByAttribute[$attributeKey][$row->getValueKey()] = $row;
+            $attributeId = \spl_object_id($row->getAttribute());
+            $firstRowByAttribute[$attributeId] ??= $row;
+            $rowsByAttribute[$attributeId][$row->getValueKey()] = $row;
         }
 
         $result = [];
 
-        foreach ($firstRowByAttribute as $attributeKey => $first) {
-            $rows = $rowsByAttribute[$attributeKey];
+        foreach ($firstRowByAttribute as $attributeId => $first) {
+            $rows = $rowsByAttribute[$attributeId];
             $attribute = $first->getAttribute();
 
             $value = match ($attribute->getType()) {
@@ -152,8 +157,9 @@ class ProductTwigExtension extends AbstractExtension
 
     /**
      * Guarded registry lookup for types without an explicit match arm above (e.g. range,
-     * or any type registered by extending code). Returns the raw scalar for a single-key
-     * type (so plain 'value' unwraps like before) and the whole keyed map otherwise.
+     * or any type registered by extending code). Returns the raw scalar when the type's only
+     * value key is the default 'value' key (so plain 'value' unwraps like before) and the
+     * whole keyed map otherwise.
      *
      * @param array<string, ProductAttributeValueInterface> $rows
      */

@@ -57,6 +57,9 @@ class ProductAttributesNormalizer implements NormalizerInterface
         if (null !== $productFamily) {
             foreach ($productFamily->getFamilyAttributes() as $familyAttribute) {
                 $attribute = $familyAttribute->getAttribute();
+                if (!$this->attributeTypeRegistry->has($attribute->getType())) {
+                    continue;
+                }
                 $type = $this->attributeTypeRegistry->get($attribute->getType());
 
                 foreach ($type->getValueKeys() as $key) {

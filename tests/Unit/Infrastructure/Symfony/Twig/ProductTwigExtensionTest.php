@@ -894,6 +894,55 @@ class ProductTwigExtensionTest extends TestCase
         $this->assertNull($result['attributes'][0]['formattedValue']);
     }
 
+    public function testLoadProductKeepsCollidingAttributeKeysAsSeparateEntries(): void
+    {
+        $product = new Product('uuid-1');
+        $pdc = new ProductDimensionContent($product);
+
+        // Attribute A was renamed away from 'depth' to 'width'; its stored row still carries the
+        // stale attributeKey 'depth'. Attribute B is a distinct attribute that later reused the
+        // freed key 'depth'. Both rows must stay in separate entries despite the shared string.
+        $attributeA = new Attribute(new AttributeGroup());
+        $attributeA->setKey('width');
+        $attributeA->setType(AttributeInterface::TYPE_TEXT);
+        $attributeA->addTranslation(new AttributeTranslation($attributeA, 'en', 'Width'));
+
+        $attributeB = new Attribute(new AttributeGroup());
+        $attributeB->setKey('depth');
+        $attributeB->setType(AttributeInterface::TYPE_NUMBER);
+        $attributeB->addTranslation(new AttributeTranslation($attributeB, 'en', 'Depth'));
+
+        $rowA = new ProductAttributeValue($pdc, $attributeA, 'depth');
+        $rowA->setText('Ten');
+        $rowB = new ProductAttributeValue($pdc, $attributeB, 'depth');
+        $rowB->setNumber(5.0);
+
+        $pdc->addAttribute($rowA);
+        $pdc->addAttribute($rowB);
+
+        $this->productRepository->findOneBy(Argument::cetera())->willReturn($product);
+        $this->contentAggregator->aggregate($product, Argument::type('array'))
+            ->willReturn($pdc);
+        $this->contentResolver->resolve($pdc, [])->willReturn([]);
+        $this->referenceStore->add('uuid-1', ProductInterface::RESOURCE_KEY)->shouldBeCalled();
+
+        $result = $this->extension->loadProduct('uuid-1', [], 'en');
+
+        $this->assertIsArray($result);
+        /** @var array{attributes: list<array{key: string, label: string, type: string, value: mixed, formattedValue: string|null}>} $result */
+        $this->assertCount(2, $result['attributes']);
+
+        $byLabel = [];
+        foreach ($result['attributes'] as $entry) {
+            $byLabel[$entry['label']] = $entry;
+        }
+
+        $this->assertSame(AttributeInterface::TYPE_TEXT, $byLabel['Width']['type']);
+        $this->assertSame('Ten', $byLabel['Width']['value']);
+        $this->assertSame(AttributeInterface::TYPE_NUMBER, $byLabel['Depth']['type']);
+        $this->assertSame(5.0, $byLabel['Depth']['value']);
+    }
+
     public function testLoadProductReturnsNullFormattedValueForPartiallyFilledRange(): void
     {
         $product = new Product('uuid-1');

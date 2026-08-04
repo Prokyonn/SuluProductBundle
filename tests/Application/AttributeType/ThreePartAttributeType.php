@@ -50,18 +50,18 @@ final class ThreePartAttributeType extends AbstractAttributeType
 
     public function writeValue(array $values, array $raw): void
     {
+        // Validate everything before touching a single row - same contract as RangeAttributeType.
+        $numbers = [];
         foreach (['a', 'b', 'c'] as $key) {
-            $row = $values[$key] ?? null;
             $value = $raw[$key] ?? null;
 
-            if (null === $value || '' === $value) {
-                $row?->setNumber(null);
-
-                continue;
-            }
-
+            Assert::true(null !== $value && '' !== $value, \sprintf('The "%s" part is missing.', $key));
             Assert::numeric($value);
-            $row?->setNumber((float) $value);
+            $numbers[$key] = (float) $value;
         }
+
+        $values['a']->setNumber($numbers['a']);
+        $values['b']->setNumber($numbers['b']);
+        $values['c']->setNumber($numbers['c']);
     }
 }

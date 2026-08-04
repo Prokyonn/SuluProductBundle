@@ -972,6 +972,31 @@ class ProductControllerTest extends SuluTestCase
             $this->assertSame('number', $field->getType());
             $this->assertSame(4, $field->getColSpan());
         }
+
+        // The abstraction guard, part two: a partial write (missing 'c') must be rejected
+        // without mutating any of the three rows - the same contract RangeAttributeType
+        // enforces, and the gap ThreePartAttributeType's original defensive guards left open.
+        $this->client->request(
+            'PUT',
+            '/admin/api/products/' . $id . '.json?locale=en',
+            [],
+            [],
+            [],
+            \json_encode([
+                'locale' => 'en',
+                'attributes' => [
+                    $attributeId . '_a' => '10',
+                    $attributeId . '_b' => '20',
+                ],
+            ]) ?: null,
+        );
+        $this->assertHttpStatusCode(400, $this->client->getResponse());
+
+        $unchanged = [];
+        foreach ($this->getPersistedAttributeValues($id) as $row) {
+            $unchanged[$row->getValueKey()] = $row->getNumber();
+        }
+        $this->assertSame(['a' => 1.0, 'b' => 2.0, 'c' => 3.0], $unchanged);
     }
 
     public function testHalfFilledOptionalRangeReturns422(): void

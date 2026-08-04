@@ -44,6 +44,9 @@ final class RangeAttributeType extends AbstractAttributeType
     ): void {
         $config = $attribute->getConfig();
 
+        // These are the allowed numeric domain for each input field (from the attribute's
+        // config), not the stored range bounds — despite the name collision with the 'min'/'max'
+        // value keys this type declares in getValueKeys().
         foreach (['min', 'max', 'step'] as $name) {
             $value = $config[$name] ?? null;
             if (null === $value) {

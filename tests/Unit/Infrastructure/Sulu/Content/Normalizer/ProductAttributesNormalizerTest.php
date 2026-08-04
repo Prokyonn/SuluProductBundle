@@ -116,6 +116,31 @@ class ProductAttributesNormalizerTest extends TestCase
         $this->assertNull($attributes['42_value']);
     }
 
+    public function testEnhanceSkipsFamilyAttributeWithUnregisteredType(): void
+    {
+        /** @var ObjectProphecy<AttributeInterface> $attribute */
+        $attribute = $this->prophesize(AttributeInterface::class);
+        $attribute->getId()->willReturn(42);
+        $attribute->getType()->willReturn('colour');
+
+        /** @var ObjectProphecy<ProductFamilyAttributeInterface> $familyAttribute */
+        $familyAttribute = $this->prophesize(ProductFamilyAttributeInterface::class);
+        $familyAttribute->getAttribute()->willReturn($attribute->reveal());
+
+        /** @var ObjectProphecy<ProductFamilyInterface> $family */
+        $family = $this->prophesize(ProductFamilyInterface::class);
+        $family->getFamilyAttributes()->willReturn([$familyAttribute->reveal()]);
+
+        /** @var ObjectProphecy<ProductDimensionContentInterface> $dc */
+        $dc = $this->prophesize(ProductDimensionContentInterface::class);
+        $dc->getProductFamily()->willReturn($family->reveal());
+        $dc->getAttributes()->willReturn(new ArrayCollection());
+
+        $result = $this->normalizer->enhance($dc->reveal(), []);
+
+        $this->assertSame([], $result['attributes']);
+    }
+
     public function testEnhancePrePopulatesUnitKeyFromConfigUnitAlone(): void
     {
         /** @var ObjectProphecy<AttributeInterface> $attribute */
